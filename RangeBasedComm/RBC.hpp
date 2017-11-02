@@ -1,0 +1,759 @@
+/*****************************************************************************
+ * This file is part of the Project SchizophrenicQuicksort
+ * 
+ * Copyright (c) 2016-2017, Armin Wiebigke <armin.wiebigke@gmail.com>
+ * Copyright (c) 2016-2017, Michael Axtmann <michael.axtmann@kit.edu>
+ *
+ * All rights reserved. Published under the BSD-2 license in the LICENSE file.
+******************************************************************************/
+
+#ifndef MPI_RANGED_HPP
+#define MPI_RANGED_HPP
+
+#include <mpi.h>
+#include <vector>
+#include <memory>
+#include <ostream>
+#include "RangeGroup.hpp"
+
+namespace RBC {
+    
+    /**
+     * Virtual superclass for the specific requests for each communication operation.
+     * The header Requests.h defines the subclasses.
+     */
+    class R_Req {
+    public:
+
+        virtual ~R_Req() {};
+        R_Req() {};
+        //test method has to be implemented by subclasses
+        virtual int test(int *flag, MPI_Status *status) = 0;
+    };
+    
+    namespace Tag_Const {
+        const int 
+            ALLGATHER       = 1000070,
+            ALLREDUCE       = 1000080, 
+            BARRIER         = 1000100,
+            BCAST           = 1000105,
+            EXSCAN          = 1000110,
+            GATHER          = 1000115,
+            REDUCE          = 1000120,
+            SCAN            = 1000125,
+            SCANANDBCAST    = 1000130;
+    };
+    
+    /**
+     * Ranged based communicator
+     */
+    class Comm {
+    public:
+        
+        /**
+         * Create an empty communicator.
+         * Use Create_Comm_from_MPI to make a usable communicator.
+         */
+        Comm();
+        
+        /**
+         * Returns the underlying MPI communicator 
+         */
+        const MPI_Comm& GetMpiComm() const;
+        
+        /**
+         * Returns the rank on the range communicator from a rank on the MPI communicator 
+         */
+        int MpiRankToRangeRank(int mpi_rank) const;
+        
+        /**
+         * Returns the rank on the MPI communicator from a rank on the range communicator 
+         */
+        int RangeRankToMpiRank(int range_rank) const;
+        
+        /**
+         * Returns true if MPI implementations of collective operations are used
+         */
+        bool useMPICollectives() const;
+        
+        /**
+         * Returns true if the given rank on the MPI communicator is part of the 
+         * range communicator 
+         */
+        bool includesMpiRank(int rank) const;
+        
+        /**
+         * Returns true if the communicator contains no ranks 
+         */
+        bool isEmpty() const;
+        
+        /*
+         * Creates a Range comm including the MPI ranks first to last on the given MPI comm
+         */
+        Comm(MPI_Comm mpi_comm, RangeGroup range_groups, bool use_MPI_collectives, 
+                bool split_MPI_comm, bool is_MPI_comm = false, bool delete_MPI_comm = false);
+        Comm(MPI_Comm mpi_comm, bool use_MPI_collectives, 
+                bool split_MPI_comm, bool is_MPI_comm = false, bool delete_MPI_comm = false);
+        void init();
+        MPI_Comm mpi_comm;
+        bool use_MPI_collectives, split_MPI_comm, is_MPI_comm, free_MPI_comm;
+        RangeGroup range_group;
+        int rank, size;
+
+        /*
+         * Returns true if the rank (on the MPI comm) is part of this Range comm
+         */
+    };
+    std::ostream& operator<<(std::ostream& os, const Comm& comm);
+
+    /**
+     * Request class for Range communication.
+     * Each non-blocking operation returns a request that is then used to call
+     * the Test, Testall, Wait or Waitall operation.
+     */
+    class Request {
+
+    public:
+        
+        Request();
+        //Request acts like a pointer to a R_Req
+        Request(R_Req *req);
+        R_Req& operator*();
+        R_Req* operator->();
+        void operator=(std::unique_ptr<R_Req> req);
+
+        std::unique_ptr<R_Req> req_ptr;
+    };  
+
+    /**
+     * Non-blocking broadcast
+     * @param buffer Buffer where the broadcast value will be stored
+     * @param count Number of elements that will be broadcasted
+     * @param datatype MPI datatype of the elements
+     * @param root The rank that initially has the broadcast value
+     * @param comm The Range comm on which the operation is performed
+     * @param request Request that will be returned
+     * @param tag Tag to differentiate between multiple calls
+     */
+    int Ibcast(void *buffer, int count, MPI_Datatype datatype, int root,
+            RBC::Comm const &comm, Request *request, int tag = Tag_Const::BCAST);
+    
+    /**
+     * Blocking broadcast
+     * @param buffer Buffer where the broadcast value will be stored
+     * @param count Number of elements that will be broadcasted
+     * @param datatype MPI datatype of the elements
+     * @param root The rank that initially has the broadcast value
+     * @param comm The Range comm on which the operation is performed
+     */
+    int Bcast(void *buffer, int count, MPI_Datatype datatype, int root,
+            RBC::Comm const &comm);
+    
+    /**
+     * Non-blocking gather with equal amount of elements on each process
+     * @param sendbuf Starting address of send buffer
+     * @param sendcount Number of elements in send buffer
+     * @param sendtype MPI datatype of the elements
+     * @param recvbuf Buffer where the gathered elements will be stored (only relevant at root)
+     * @param recvcount Number of elements for each receive 
+     * @param recvtype MPI datatype of the receive elements
+     * @param root Rank of receiving process
+     * @param comm The Range comm on which the operation is performed
+     * @param request Request that will be returned
+     * @param tag Tag to differentiate between multiple calls
+     */
+    int Igather(const void *sendbuf, int sendcount, MPI_Datatype sendtype,
+            void *recvbuf, int recvcount, MPI_Datatype recvtype,
+            int root, RBC::Comm const &comm, RBC::Request* request,
+            int tag = Tag_Const::GATHER);
+    
+    /**
+     * Blocking gather with equal amount of elements on each process
+     * @param sendbuf Starting address of send buffer
+     * @param sendcount Number of elements in send buffer
+     * @param sendtype MPI datatype of the elements
+     * @param recvbuf Buffer where the gathered elements will be stored (only relevant at root)
+     * @param recvcount Number of elements for each receive 
+     * @param recvtype MPI datatype of the receive elements
+     * @param root Rank of receiving process
+     * @param comm The Range comm on which the operation is performed
+     */
+    int Gather(const void *sendbuf, int sendcount, MPI_Datatype sendtype,
+            void *recvbuf, int recvcount, MPI_Datatype recvtype,
+            int root, RBC::Comm const &comm);
+    
+    /**
+     * Non-blocking gather with specified number of elements on each process
+     * @param sendbuf Starting address of send buffer
+     * @param sendcount Number of elements in send buffer
+     * @param sendtype MPI datatype of the elements
+     * @param recvbuf Buffer where the gathered elements will be stored (only relevant at root)
+     * @param recvcounts Array containing the number of elements that are received from each process 
+     * @param displs Array, entry i specifies the displacement relative to recvbuf at which to place the incoming data from process i
+     * @param recvtype MPI datatype of the receive elements
+     * @param root Rank of receiving process
+     * @param comm The Range comm on which the operation is performed
+     * @param request Request that will be returned
+     * @param tag Tag to differentiate between multiple calls
+     */
+    int Igatherv(const void *sendbuf, int sendcount, MPI_Datatype sendtype,
+            void *recvbuf, const int *recvcounts, const int *displs, MPI_Datatype recvtype,
+            int root, RBC::Comm const &comm, RBC::Request* request,
+            int tag = Tag_Const::GATHER);
+    
+    /**
+     * Blocking gather with specified number of elements on each process
+     * @param sendbuf Starting address of send buffer
+     * @param sendcount Number of elements in send buffer
+     * @param sendtype MPI datatype of the elements
+     * @param recvbuf Buffer where the gathered elements will be stored (only relevant at root)
+     * @param recvcounts Array containing the number of elements that are received from each process 
+     * @param displs Array, entry i specifies the displacement relative to recvbuf at which to place the incoming data from process i
+     * @param recvtype MPI datatype of the receive elements
+     * @param root Rank of receiving process
+     * @param comm The Range comm on which the operation is performed
+     */
+    int Gatherv(const void *sendbuf, int sendcount, MPI_Datatype sendtype,
+            void *recvbuf, const int *recvcounts, const int *displs, MPI_Datatype recvtype,
+            int root, RBC::Comm const &comm);
+    
+    /**
+     * Non-blocking gather that merges the data via a given function
+     * @param sendbuf Starting address of send buffer
+     * @param sendcount Number of elements in send buffer
+     * @param sendtype MPI datatype of the elements
+     * @param recvbuf Buffer where the gathered elements will be stored (only relevant at root)
+     * @param recvcount Total number of all elements that will be received
+     * @param root Rank of receiving process
+     * @param op Operation that takes (start, mid, end) as parameters and 
+     *  merges the two arrays [start, mid) and [mid, end) in-place
+     * @param comm The Range comm on which the operation is performed
+     * @param request Request that will be returned
+     * @param tag Tag to differentiate between multiple calls
+     */
+    int Igatherm(const void *sendbuf, int sendcount, MPI_Datatype sendtype,
+                void *recvbuf, int recvcount, int root,
+                std::function<void (void*, void*, void*)> op, RBC::Comm const &comm,
+                RBC::Request* request, int tag = Tag_Const::GATHER);
+    
+    /**
+     * Blocking gather that merges the data via a given function
+     * @param sendbuf Starting address of send buffer
+     * @param sendcount Number of elements in send buffer
+     * @param sendtype MPI datatype of the elements
+     * @param recvbuf Buffer where the gathered elements will be stored (only relevant at root)
+     * @param recvcount Number of total elements that will be received
+     * @param root Rank of receiving process
+     * @param op Operation that takes (start, mid, end) as parameters and 
+     *  merges the two arrays [start, mid) and [mid, end) in-place
+     * @param comm The Range comm on which the operation is performed
+     */
+    int Gatherm(const void *sendbuf, int sendcount, MPI_Datatype sendtype,
+                void *recvbuf, int recvcount, int root,
+                std::function<void (void*, void*, void*)> op, RBC::Comm const &comm);
+    
+    /**
+     * Non-blocking allgather with equal amount of elements on each process
+     * @param sendbuf Starting address of send buffer
+     * @param sendcount Number of elements in send buffer
+     * @param sendtype MPI datatype of the elements
+     * @param recvbuf Buffer where the gathered elements will be stored (only relevant at root)
+     * @param recvcount Number of elements for each receive 
+     * @param recvtype MPI datatype of the receive elements
+     * @param root Rank of receiving process
+     * @param comm The Range comm on which the operation is performed
+     * @param request Request that will be returned
+     * @param tag Tag to differentiate between multiple calls
+     */
+    int Iallgather(const void *sendbuf, int sendcount, MPI_Datatype sendtype,
+            void *recvbuf, int recvcount, MPI_Datatype recvtype,
+            RBC::Comm const &comm, RBC::Request* request,
+            int tag = Tag_Const::ALLGATHER);
+    
+    /**
+     * Blocking allgather with equal amount of elements on each process
+     * @param sendbuf Starting address of send buffer
+     * @param sendcount Number of elements in send buffer
+     * @param sendtype MPI datatype of the elements
+     * @param recvbuf Buffer where the gathered elements will be stored (only relevant at root)
+     * @param recvcount Number of elements for each receive 
+     * @param recvtype MPI datatype of the receive elements
+     * @param comm The Range comm on which the operation is performed
+     */
+    int Allgather(const void *sendbuf, int sendcount, MPI_Datatype sendtype,
+            void *recvbuf, int recvcount, MPI_Datatype recvtype,
+            RBC::Comm const &comm);
+    
+    /**
+     * Non-blocking allgather with specified number of elements on each process
+     * @param sendbuf Starting address of send buffer
+     * @param sendcount Number of elements in send buffer
+     * @param sendtype MPI datatype of the elements
+     * @param recvbuf Buffer where the gathered elements will be stored (only relevant at root)
+     * @param recvcounts Array containing the number of elements that are received from each process 
+     * @param displs Array, entry i specifies the displacement relative to recvbuf at which to place the incoming data from process i
+     * @param recvtype MPI datatype of the receive elements
+     * @param comm The Range comm on which the operation is performed
+     * @param request Request that will be returned
+     * @param tag Tag to differentiate between multiple calls
+     */
+    int Iallgatherv(const void *sendbuf, int sendcount, MPI_Datatype sendtype,
+            void *recvbuf, const int *recvcounts, const int *displs, MPI_Datatype recvtype,
+            RBC::Comm const &comm, RBC::Request* request,
+            int tag = Tag_Const::ALLGATHER);
+    
+    /**
+     * Blocking allgather with specified number of elements on each process
+     * @param sendbuf Starting address of send buffer
+     * @param sendcount Number of elements in send buffer
+     * @param sendtype MPI datatype of the elements
+     * @param recvbuf Buffer where the gathered elements will be stored (only relevant at root)
+     * @param recvcounts Array containing the number of elements that are received from each process 
+     * @param displs Array, entry i specifies the displacement relative to recvbuf at which to place the incoming data from process i
+     * @param recvtype MPI datatype of the receive elements
+     * @param comm The Range comm on which the operation is performed
+     */
+    int Allgatherv(const void *sendbuf, int sendcount, MPI_Datatype sendtype,
+            void *recvbuf, const int *recvcounts, const int *displs, MPI_Datatype recvtype,
+            RBC::Comm const &comm);
+    
+    /**
+     * Non-blocking allgather that merges the data via a given function
+     * @param sendbuf Starting address of send buffer
+     * @param sendcount Number of elements in send buffer
+     * @param sendtype MPI datatype of the elements
+     * @param recvbuf Buffer where the gathered elements will be stored (only relevant at root)
+     * @param recvcount Total number of all elements that will be received
+     * @param op Operation that takes (start, mid, end) as parameters and 
+     *  merges the two arrays [start, mid) and [mid, end) in-place
+     * @param comm The Range comm on which the operation is performed
+     * @param request Request that will be returned
+     * @param tag Tag to differentiate between multiple calls
+     */
+    int Iallgatherm(const void *sendbuf, int sendcount, MPI_Datatype sendtype,
+                void *recvbuf, int recvcount,
+                std::function<void (void*, void*, void*)> op, RBC::Comm const &comm,
+                RBC::Request* request, int tag = Tag_Const::ALLGATHER);
+    
+    /**
+     * Blocking allgather that merges the data via a given function
+     * @param sendbuf Starting address of send buffer
+     * @param sendcount Number of elements in send buffer
+     * @param sendtype MPI datatype of the elements
+     * @param recvbuf Buffer where the gathered elements will be stored (only relevant at root)
+     * @param recvcount Number of total elements that will be received
+     * @param op Operation that takes (start, mid, end) as parameters and 
+     *  merges the two arrays [start, mid) and [mid, end) in-place
+     * @param comm The Range comm on which the operation is performed
+     */
+    int Allgatherm(const void *sendbuf, int sendcount, MPI_Datatype sendtype,
+                void *recvbuf, int recvcount,
+                std::function<void (void*, void*, void*)> op, RBC::Comm const &comm);
+    
+    
+    /**
+     * Non-blocking reduce
+     * @param sendbuf Starting address of send buffer
+     * @param recvbuf Starting address of receive buffer
+     * @param count Number of elements in send buffer
+     * @param datatype MPI datatype of the elements
+     * @param op Operation used to reduce two elements
+     * @param root Rank of receiving process
+     * @param comm The Range comm on which the operation is performed
+     * @param request Request that will be returned
+     * @param tag Tag to differentiate between multiple calls
+     */
+    int Ireduce(const void *sendbuf, void *recvbuf, int count, MPI_Datatype datatype,
+            MPI_Op op, int root, RBC::Comm const &comm, Request *request,
+            int tag = Tag_Const::REDUCE);
+    
+    /**
+     * Blocking reduce
+     * @param sendbuf Starting address of send buffer
+     * @param recvbuf Starting address of receive buffer
+     * @param count Number of elements in send buffer
+     * @param datatype MPI datatype of the elements
+     * @param op Operation used to reduce two elements
+     * @param root Rank of receiving process
+     * @param comm The Range comm on which the operation is performed
+     */
+    int Reduce(const void *sendbuf, void *recvbuf, int count, MPI_Datatype datatype,
+            MPI_Op op, int root, RBC::Comm const &comm);
+
+    
+    /**
+     * Non-blocking Allreduce
+     * @param sendbuf Starting address of send buffer
+     * @param recvbuf Starting address of receive buffer
+     * @param count Number of elements in send buffer
+     * @param datatype MPI datatype of the elements
+     * @param op Operation used to reduce two elements
+     * @param comm The Range comm on which the operation is performed
+     * @param request Request that will be returned
+     * @param tag Tag to differentiate between multiple calls
+     */
+    int Iallreduce(const void *sendbuf, void *recvbuf, int count, MPI_Datatype datatype,
+            MPI_Op op, RBC::Comm const &comm, Request *request,
+            int tag = Tag_Const::ALLREDUCE);
+    
+    /**
+     * Blocking Allreduce
+     * @param sendbuf Starting address of send buffer
+     * @param recvbuf Starting address of receive buffer
+     * @param count Number of elements in send buffer
+     * @param datatype MPI datatype of the elements
+     * @param op Operation used to reduce two elements
+     * @param comm The Range comm on which the operation is performed
+     */
+    int Allreduce(const void *sendbuf, void *recvbuf, int count, MPI_Datatype datatype,
+            MPI_Op op, RBC::Comm const &comm);
+    
+    /**
+     * Non-blocking scan (partial reductions)
+     * @param sendbuf Starting address of send buffer
+     * @param recvbuf Starting address of receive buffer
+     * @param count Number of elements in send buffer
+     * @param datatype MPI datatype of the elements
+     * @param op Operation used to reduce two elements
+     * @param comm The Range comm on which the operation is performed
+     * @param request Request that will be returned
+     * @param tag Tag to differentiate between multiple calls
+     */
+    int Iscan(const void *sendbuf, void *recvbuf, int count, MPI_Datatype datatype,
+            MPI_Op op, RBC::Comm const &comm, Request *request,
+            int tag = Tag_Const::SCAN);
+    
+    /**
+     * Blocking scan (partial reductions)
+     * @param sendbuf Starting address of send buffer
+     * @param recvbuf Starting address of receive buffer
+     * @param count Number of elements in send buffer
+     * @param datatype MPI datatype of the elements
+     * @param op Operation used to reduce two elements
+     * @param comm The Range comm on which the operation is performed
+     */
+    int Scan(const void *sendbuf, void *recvbuf, int count, MPI_Datatype datatype,
+            MPI_Op op, RBC::Comm const &comm);
+        
+    /**
+     * Non-blocking exclusive scan (partial reductions)
+     * @param sendbuf Starting address of send buffer
+     * @param recvbuf Starting address of receive buffer
+     * @param count Number of elements in send buffer
+     * @param datatype MPI datatype of the elements
+     * @param op Operation used to reduce two elements
+     * @param comm The Range comm on which the operation is performed
+     * @param request Request that will be returned
+     * @param tag Tag to differentiate between multiple calls
+     */
+    int Iexscan(const void *sendbuf, void *recvbuf, int count, MPI_Datatype datatype,
+            MPI_Op op, RBC::Comm const &comm, Request *request,
+            int tag = Tag_Const::EXSCAN);
+    
+    /**
+     * Blocking exclusive scan (partial reductions)
+     * @param sendbuf Starting address of send buffer
+     * @param recvbuf Starting address of receive buffer
+     * @param count Number of elements in send buffer
+     * @param datatype MPI datatype of the elements
+     * @param op Operation used to reduce two elements
+     * @param comm The Range comm on which the operation is performed
+     */
+    int Exscan(const void *sendbuf, void *recvbuf, int count, MPI_Datatype datatype,
+            MPI_Op op, RBC::Comm const &comm);
+    
+    /**
+     * Non-blocking scan (partial reductions) and broadcast of the reduction over all elements
+     * @param sendbuf Starting address of send buffer
+     * @param recvbuf_scan Starting address of receive buffer for the scan value
+     * @param recvbuf_bcast Starting address of receive buffer for the broadcast value
+     * @param count Number of elements in send buffer
+     * @param datatype MPI datatype of the elements
+     * @param op Operation used to reduce two elements
+     * @param comm The Range comm on which the operation is performed
+     * @param request Request that will be returned
+     * @param tag Tag to differentiate between multiple calls
+     */
+    int IscanAndBcast(const void *sendbuf, void *recvbuf_scan, void *recvbuf_bcast,
+            int count, MPI_Datatype datatype, MPI_Op op, RBC::Comm const &comm,
+            Request *request, int tag = Tag_Const::SCANANDBCAST);
+    
+    /**
+     * Non-blocking scan (partial reductions) and broadcast of the reduction over all elements
+     * @param sendbuf Starting address of send buffer
+     * @param recvbuf_scan Starting address of receive buffer for the scan value
+     * @param recvbuf_bcast Starting address of receive buffer for the broadcast value
+     * @param count Number of elements in send buffer
+     * @param datatype MPI datatype of the elements
+     * @param op Operation used to reduce two elements
+     * @param comm The Range comm on which the operation is performed
+     */
+    int ScanAndBcast(const void *sendbuf, void *recvbuf_scan, void *recvbuf_bcast,
+            int count, MPI_Datatype datatype, MPI_Op op, RBC::Comm const &comm);
+    
+    /**
+     * Non-blocking send
+     * @param sendbuf Starting address of send buffer
+     * @param count Number of elements in send buffer
+     * @param datatype MPI datatype of the elements
+     * @param dest Destination rank
+     * @param tag Tag to differentiate between multiple calls
+     * @param comm The Range comm on which the operation is performed
+     * @param request Request that will be returned
+     */
+    int Isend(const void *sendbuf, int count, MPI_Datatype datatype,
+            int dest, int tag, RBC::Comm const &comm, Request *request);
+    
+    /**
+     * Non-blocking synchronous send
+     * @param sendbuf Starting address of send buffer
+     * @param count Number of elements in send buffer
+     * @param datatype MPI datatype of the elements
+     * @param dest Destination rank
+     * @param tag Tag to differentiate between multiple calls
+     * @param comm The Range comm on which the operation is performed
+     * @param request Request that will be returned
+     */
+    int Issend(const void *sendbuf, int count, MPI_Datatype datatype,
+            int dest, int tag, RBC::Comm const &comm, Request *request);
+    
+    /**
+     * Blocking send
+     * @param sendbuf Starting address of send buffer
+     * @param count Number of elements in send buffer
+     * @param datatype MPI datatype of the elements
+     * @param dest Destination rank
+     * @param tag Tag to differentiate between multiple calls
+     * @param comm The Range comm on which the operation is performed
+     */
+    int Send(const void *sendbuf, int count, MPI_Datatype datatype,
+            int dest, int tag, RBC::Comm const &comm);
+    
+    /**
+     * Blocking synchronous send
+     * @param sendbuf Starting address of send buffer
+     * @param count Number of elements in send buffer
+     * @param datatype MPI datatype of the elements
+     * @param dest Destination rank
+     * @param tag Tag to differentiate between multiple calls
+     * @param comm The Range comm on which the operation is performed
+     */
+    int Ssend(const void *sendbuf, int count, MPI_Datatype datatype,
+            int dest, int tag, RBC::Comm const &comm);
+    
+    /**
+     * Non-blocking receive
+     * @param sendbuf Starting address of receive buffer
+     * @param count Number of elements to be received
+     * @param datatype MPI datatype of the elements
+     * @param dest Source rank, can be MPI_ANY_SOURCE
+     * @param tag Tag to differentiate between multiple calls
+     * @param comm The Range comm on which the operation is performed
+     * @param request Request that will be returned
+     */
+    int Irecv(void *buffer, int count, MPI_Datatype datatype, int source,
+            int tag, RBC::Comm const &comm, Request *request);
+    
+    /**
+     * Blocking receive
+     * @param sendbuf Starting address of receive buffer
+     * @param count Number of elements to be received
+     * @param datatype MPI datatype of the elements
+     * @param dest Source rank, can be MPI_ANY_SOURCE
+     * @param tag Tag to differentiate between multiple calls
+     * @param comm The Range comm on which the operation is performed
+     */
+    int Recv(void *buf, int count, MPI_Datatype datatype, int source,
+            int tag, RBC::Comm const &comm, MPI_Status *status);
+
+    
+    /**
+     * Non-blocking send receive operation
+     * @param sendbuf Starting address of send buffer
+     * @param sendcount Number of elements to be send
+     * @param sendtype MPI datatype of the elements
+     * @param dest Target rank
+     * @param sendtag Tag to differentiate between multiple calls
+     * @param recvbuf Starting address of the receive buffer
+     * @param recvcount Number of elements to be send
+     * @param recvtype MPI datatype of the elements
+     * @param source Source rank
+     * @param recvtag Tag to differentiate between multiple calls
+     * @param comm Communicator
+     */
+    int Isendrecv(void *sendbuf,
+            int sendcount, MPI_Datatype sendtype,
+            int dest, int sendtag,
+            void *recvbuf, int recvcount, MPI_Datatype recvtype,
+            int source, int recvtag,
+            RBC::Comm const &comm, Request *request);
+    
+    /**
+     * Blocking send receive operation
+     * @param sendbuf Starting address of send buffer
+     * @param sendcount Number of elements to be send
+     * @param sendtype MPI datatype of the elements
+     * @param dest Target rank
+     * @param sendtag Tag to differentiate between multiple calls
+     * @param recvbuf Starting address of the receive buffer
+     * @param recvcount Number of elements to be send
+     * @param recvtype MPI datatype of the elements
+     * @param source Source rank
+     * @param recvtag Tag to differentiate between multiple calls
+     * @param comm Communicator
+     */
+    int Sendrecv(void *sendbuf,
+            int sendcount, MPI_Datatype sendtype,
+            int dest, int sendtag,
+            void *recvbuf, int recvcount, MPI_Datatype recvtype,
+            int source, int recvtag,
+            RBC::Comm const &comm, MPI_Status *status);
+    
+    /**
+     * Test if a message can be received
+     * @param source Source rank, can be MPI_ANY_SOURCE
+     * @param tag Message tag, can be MPI_ANY_TAG
+     * @param comm The Range comm on which the operation is performed
+     * @param flag Returns 1 if message can be received, else 0
+     * @param status Returns a status for the message, can be MPI_STATUS_IGNORE
+     * @return 
+     */
+    int Iprobe(int source, int tag, RBC::Comm const &comm, int *flag, MPI_Status *status);
+    
+    /**
+     * Block until a message can be received
+     * @param source Source rank, can be MPI_ANY_SOURCE
+     * @param tag Message tag, can be MPI_ANY_TAG
+     * @param comm The Range comm on which the operation is performed
+     * @param status Returns a status for the message, can be MPI_STATUS_IGNORE
+     * @return 
+     */
+    int Probe(int source, int tag, RBC::Comm const &comm, MPI_Status *status);
+    
+    /**
+     * Non-blocking barrier
+     * @param comm The Range comm on which the operation is performed
+     * @param request Request that will be returned
+     */
+    int Ibarrier(RBC::Comm const &comm, Request *request);
+    
+    /**
+     * Blocking barrier
+     * @param comm The Range comm on which the operation is performed
+     */
+    int Barrier(RBC::Comm const &comm);
+    
+    /**
+     * Test if a operation is completed
+     * @param request Request of the operation
+     * @param flag Returns 1 if operation completed, else 0
+     * @param status Returns a status if completed, can be MPI_STATUS_IGNORE
+     * @return 
+     */
+    int Test(Request *request, int *flag, MPI_Status *status);
+    
+    /**
+     * Wait until a operation is completed
+     * @param request Request of the operation
+     * @param status Returns a status if completed, can be MPI_STATUS_IGNORE
+     * @return 
+     */
+    int Wait(Request *request, MPI_Status *status);
+    
+    /**
+     * Test if multiple operations are completed
+     * @param count Number of operations
+     * @param array_of_requests Array of requests of the operations
+     * @param flag Returns 1 if all operations completed, else 0
+     * @param array_of_statuses Array of statuses for the operations, can be MPI_STATUSES_IGNORE
+     */
+    int Testall(int count, Request array_of_requests[], int *flag,
+            MPI_Status array_of_statuses[]);
+    
+    /**
+     * Wait until multiple operations are completed
+     * @param count Number of operations
+     * @param array_of_requests Array of requests of the operations
+     * @param array_of_statuses Array of statuses for the operations, can be MPI_STATUSES_IGNORE
+     */
+    int Waitall(int count, Request array_of_requests[],
+            MPI_Status array_of_statuses[]);
+    
+    /**
+     * Get the rank of this process on the communicator
+     * @param comm The Range communicator
+     * @param rank Returns the rank
+     */
+    int Comm_rank(RBC::Comm const &comm, int *rank);
+    
+    /**
+     * Get the size of a Range communicator
+     * @param comm The Range communicator
+     * @param size Returns the size
+     */
+    int Comm_size(RBC::Comm const &comm, int *size);
+
+    /**
+     * Create a new communicator from a MPI communicator
+     * The communicatorr includes all ranks of the MPI communicator
+     * @param mpi_comm the MPI communicator
+     * @param comm returns the new communicator
+     */
+    int Create_Comm_from_MPI(MPI_Comm mpi_comm, RBC::Comm *rcomm,
+        bool use_MPI_collectives = false, bool split_MPI_comm = false);
+    
+    /**
+     * Create a new communicator that includes a subgroup of ranks [first, last]
+     * of the ranks from the old communicator
+     * All processes in comm have to call this function
+     * @param comm old communicator
+     * @param first first rank from the old communicator that is included in the new communicator
+     * @param last last rank from the old communicator that is included in the new communicator
+     * @param new_comm return the new communicator
+     */
+    int Comm_create(RBC::Comm const &comm, RBC::Comm *new_comm,
+        int first, int last, int stride = 1);
+    
+    /**
+     * Create a new communicator that includes a subgroup of ranks [first, last]
+     * of the ranks from the old communicator
+     * Only the processes of the new communicator have to call this function
+     * @param comm old communicator
+     * @param first first rank from the old communicator that is included in the new communicator
+     * @param last last rank from the old communicator that is included in the new communicator
+     * @param new_comm return the new communicator
+     */
+    int Comm_create_group(RBC::Comm const &comm, RBC::Comm *new_comm,
+        int first, int last, int stride = 1);
+
+    /**
+     * Create two new communicators that include the ranks [first_left, last_left]
+     * and [first_right, last_right].
+     * first_left <= last_left <= first_right <= last_right
+     * @param comm old communicator
+     * @param left_start first rank from the old communicator that is included in the new left communicator
+     * @param left_end last rank from the old communicator that is included in the new left communicator
+     * @param right_start first rank from the old communicator that is included in the new right communicator
+     * @param right_end last rank from the old communicator that is included in the new right communicator
+     * @param left_comm the new left communicator
+     * @param right_comm the new right communicator
+     */
+    int Split_Comm(RBC::Comm const &comm, int left_start, int left_end, int right_start,
+        int right_end, RBC::Comm *left_comm, RBC::Comm *right_comm);
+    
+    /**
+     * Free the MPI communicator if it was created by this library
+     * @param comm the Range::Comm including the MPI communicator
+     * @param parent_comm this MPI communicator will not be freed
+     */
+    int Comm_free(RBC::Comm const &comm);
+    
+    /**
+     * Returns the rank in the communicator of the source from a MPI_Status
+     * @param comm the communicator
+     * @param status the status
+     */
+    int get_Rank_from_Status(RBC::Comm const &comm, MPI_Status status); 
+};
+
+#endif /* MPI_RANGED_HPP */
