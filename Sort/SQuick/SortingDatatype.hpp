@@ -77,8 +77,8 @@ public:
             return "float";
         else if (std::is_same<T, double>::value)
             return "double";
-//        else if (std::is_same<T, sort_pair>::value)
-//            return "struct-float-int";
+        else if (std::is_same<T, sort_pair>::value)
+            return "struct-float-int";
     }
    
 };
