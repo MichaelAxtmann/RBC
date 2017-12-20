@@ -15,7 +15,7 @@
 #include <type_traits>
 
 enum class SORT_TYPE : uint8_t {
-    Int, Double, Long, Float//, Pair
+    Int, Double, Long, Float, Pair
 };
 
 //#pragma pack(4)
@@ -45,8 +45,8 @@ public:
             return MPI_FLOAT;
         else if (std::is_same<T, double>::value)
             return MPI_DOUBLE;
-//        else if (std::is_same<T, sort_pair>::value)
-//            return MPI_FLOAT_INT;
+        else if (std::is_same<T, sort_pair>::value)
+            return MPI_FLOAT_INT;
     }
 
     static SORT_TYPE getSortType(std::string datatype) {
@@ -58,8 +58,8 @@ public:
             return SORT_TYPE::Long;
         else if (datatype.compare("float") == 0)
             return SORT_TYPE::Float;
-//        else if (datatype.compare("struct-float-int") == 0)
-//            return SORT_TYPE::Pair;
+        else if (datatype.compare("struct-float-int") == 0)
+            return SORT_TYPE::Pair;
         else
             return SORT_TYPE::Int;
     }
@@ -77,8 +77,8 @@ public:
             return "float";
         else if (std::is_same<T, double>::value)
             return "double";
-//        else if (std::is_same<T, sort_pair>::value)
-//            return "struct-float-int";
+        else if (std::is_same<T, sort_pair>::value)
+            return "struct-float-int";
     }
    
 };
