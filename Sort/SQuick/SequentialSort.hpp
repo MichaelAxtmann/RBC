@@ -1,5 +1,5 @@
 /*****************************************************************************
- * This file is part of the Project SchizophrenicQuicksort
+ * This file is part of the Project ShizophrenicQuicksort
  * 
  * Copyright (c) 2016-2017, Armin Wiebigke <armin.wiebigke@gmail.com>
  * Copyright (C) 2016-2017, Michael Axtmann <michael.axtmann@kit.edu>
@@ -11,9 +11,6 @@
 #ifndef SQS_SEQUENTIALSORT_HPP
 #define SQS_SEQUENTIALSORT_HPP
 
-#include "../../RangeBasedComm/RBC.hpp"
-#include "QSInterval.hpp"
-#include "Constants.hpp"
 #include <mpi.h>
 #include <cassert>
 #include <cstring>
@@ -21,7 +18,9 @@
 #include <iostream>
 #include <algorithm>
 
-#define W(X) #X << "=" << X << ", "
+#include "../../RangeBasedComm/RBC.hpp"
+#include "QSInterval.hpp"
+#include "../Constants.hpp"
 
 template<typename T>
 class SequentialSort_SQS {

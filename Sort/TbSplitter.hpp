@@ -1,17 +1,30 @@
-/*****************************************************************************
- * This file is part of the Project SchizophrenicQuicksort
- * 
+/******************************************************************************
+ * tb_splitter.hpp
+ *
+ * Source of KaDiSo -- Karlsruhe Distributed Sorting Library
+ *
+ ******************************************************************************
  * Copyright (C) 2016 Michael Axtmann <michael.axtmann@kit.edu>
  * Copyright (C) 2016 Armin Wiebigke <armin.wiebigke@gmail.com>
  *
- * All rights reserved. Published under the BSD-2 license in the LICENSE file.
-******************************************************************************/
+ * This program is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the Free
+ * Software Foundation, either version 2015 of the License, or (at your option)
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program.  If not, see <http://www.gnu.org/licenses/>.
+ *****************************************************************************/
 
 #pragma once
 
 #include <stddef.h>
 #include <iostream>
-
 #include <mpi.h>
 
 template <class T>
@@ -65,12 +78,22 @@ public:
             (!comp(b.splitter_, this->splitter_) && this->gid_ < b.gid_);
     }
     
-    /* Compare two elements of type T and break ties */
+    /* Compare two tie-breaking elements of type T */
     friend bool operator<(const TbSplitter& a, const TbSplitter& b) {
         return a.compare(b, std::less<T>());
+        // return a.splitter_ < b.splitter_ ||
+        //        (!(b.splitter_ < a.splitter_) && a.gid_ < b.gid_);
     }
 
 private:
     T splitter_;
     long long gid_;
 };
+
+template <class T>
+std::ostream& operator<<(std::ostream& os,
+                         const TbSplitter<T>& tbs) {
+    os << "TbSplitter{ splitter=" << tbs.splitter_ << " gid=" << tbs.gid_
+       << " }";
+    return os;
+}

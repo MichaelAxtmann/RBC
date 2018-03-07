@@ -1,5 +1,5 @@
 /*****************************************************************************
- * This file is part of the Project SchizophrenicQuicksort
+ * This file is part of the Project ShizophrenicQuicksort
  * 
  * Copyright (c) 2016-2017, Armin Wiebigke <armin.wiebigke@gmail.com>
  * Copyright (C) 2016-2017, Michael Axtmann <michael.axtmann@kit.edu>
@@ -15,6 +15,7 @@
 #include <mpi.h>
 #include <iostream>
 #include <vector>
+
 #include "../../RangeBasedComm/RBC.hpp"
 
 /*

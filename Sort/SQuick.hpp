@@ -3,6 +3,7 @@
  * 
  * Copyright (c) 2016-2017, Armin Wiebigke <armin.wiebigke@gmail.com>
  * Copyright (c) 2016-2017, Michael Axtmann <michael.axtmann@kit.edu>
+ * Copyright (c) 2016-2017, Tobias Heuer <tobias.heuer@gmx.net>
  *
  * All rights reserved. Published under the BSD-2 license in the LICENSE file.
 ******************************************************************************/
@@ -13,6 +14,7 @@
 #include <functional>
 #include <iterator>
 #include <type_traits>
+#include <mpi.h>
 
 #include "SQuick/QuickSort.hpp"
 
@@ -41,7 +43,7 @@ template<class value_type, class Compare = std::less<value_type>>
 template<class value_type, class Compare = std::less<value_type>>
     void sort(RBC::Comm rbc_comm, std::vector<value_type> &data,
               long long global_elements = -1, Compare comp = Compare()) {
-    make_sorter<value_type>().sort_rbc(rbc_comm, data, global_elements, std::move(comp));
+    make_sorter<value_type>().sort_range(rbc_comm, data, global_elements, std::move(comp));
 }
 
 } // namespace SQuick

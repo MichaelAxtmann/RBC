@@ -1,8 +1,8 @@
 /*****************************************************************************
- * This file is part of the Project SchizophrenicQuicksort
+ * This file is part of the Project ShizophrenicQuicksort
  * 
  * Copyright (c) 2016-2017, Armin Wiebigke <armin.wiebigke@gmail.com>
- * Copyright (c) 2016-2017, Michael Axtmann <michael.axtmann@kit.edu>
+ * Copyright (C) 2016-2017, Michael Axtmann <michael.axtmann@kit.edu>
  * Copyright (c) 2016-2017, Tobias Heuer <tobias.heuer@gmx.net>
  *
  * All rights reserved. Published under the BSD-2 license in the LICENSE file.
@@ -12,14 +12,6 @@
 #define QUICKSORT_HPP
 
 #include <mpi.h>
-#include "SortingDatatype.hpp"
-#include "TbSplitter.hpp"
-#include "QSInterval.hpp"
-#include "PivotSelection.hpp"
-#include "Constants.hpp"
-#include "DataExchange.hpp"
-#include "SequentialSort.hpp"
-#include "../../RangeBasedComm/RBC.hpp"
 #include <vector>
 #include <cassert>
 #include <random>
@@ -28,9 +20,14 @@
 #include <cstring>
 #include <memory>
 
-//Macros
-#define V(X) std::cout << #X << "=" << X << endl
-#define W(X) #X << "=" << X << ", "
+#include "../SortingDatatype.hpp"
+#include "../TbSplitter.hpp"
+#include "QSInterval.hpp"
+#include "PivotSelection.hpp"
+#include "../Constants.hpp"
+#include "DataExchange.hpp"
+#include "SequentialSort.hpp"
+#include "../../RangeBasedComm/RBC.hpp"
 
 /*
  * This class represents the Quicksort algorithm
@@ -39,62 +36,38 @@ template<typename T>
 class QuickSort {
 public:
 
-    /**
-     * Create a sort algorithm configuration
-     * @param seed A seed for a random number generator. 
-     *             Has to be the same on all ranks that execute the sorting algorithm
-     * @param min_samples (optional) The minimal number of samples for the pivot selection
-     * @param add_pivot (optional) Smooth transition for number of samples in pivot selection
-     */
-    QuickSort(int seed, long long min_samples = 64, bool add_pivot = false)
-    : seed(seed)
-    , add_pivot(add_pivot)
-    , min_samples(min_samples) {
+    QuickSort(int seed, long long min_samples = 64, bool barriers = false, bool split_MPI_comm = false,
+            bool use_MPI_collectives = false, bool add_pivot = false)
+    : seed(seed), barriers(barriers),
+    split_MPI_comm(split_MPI_comm), use_MPI_collectives(use_MPI_collectives), add_pivot(add_pivot),
+    min_samples(min_samples){
         mpi_type = SortingDatatype<T>::getMPIDatatype();
     }
 
-    ~QuickSort() {}
+    ~QuickSort() {
+    }
    
-    /**
-     * Sort the data
-     * @param mpi_comm MPI communicator on which the sorting is executed
-     * @param data_vec The vector containing the data that have to be sorted
-     * @param global_elements The number of elements on all ranks in the communicator.
-     *                        Set to -1 if it is unknown
+    /*
+     * Sorts the data
      */
-    void sort(MPI_Comm mpi_comm, std::vector<T> &data, long long global_elements = -1) {
-        sort(mpi_comm, data, global_elements, std::less<T>());
+    void sort(MPI_Comm mpi_comm, std::vector<T> &data_vec, long long global_elements = -1) {
+        sort(mpi_comm, data_vec, global_elements, std::less<T>());
     }
     
-    /**
-     * Sort the data with a custom compare operator
-     * @param mpi_comm MPI communicator on which the sorting is executed
-     * @param data The vector containing the data that have to be sorted
-     * @param global_elements The number of elements on all ranks in the communicator.
-     *                        Set to -1 if it is unknown
-     * @param comp A compare operator 
-     */
     template<class Compare>
-    void sort(MPI_Comm mpi_comm, std::vector<T> &data, long long global_elements, Compare comp) {
+    void sort(MPI_Comm mpi_comm,  std::vector<T> &data, long long global_elements, Compare comp) {
         RBC::Comm comm;
-        RBC::Create_Comm_from_MPI(mpi_comm, &comm, true, true);
+        RBC::Create_Comm_from_MPI(mpi_comm, &comm, use_MPI_collectives, split_MPI_comm);
         MPI_Barrier(mpi_comm);
-        sort_rbc(comm, data, global_elements, comp);
+        sort_range(comm, data, global_elements, comp);
     }
     
-    /**
-     * Sort on a RBC communicator
-     * @param comm RBC communicator on which the sorting is executed
-     * @param data The vector containing the data that have to be sorted
-     * @param global_elements The number of elements on all ranks in the communicator.
-     *                        Set to -1 if it is unknown
-     * @param comp A compare operator 
-     */
     template<class Compare>
-    void sort_rbc(RBC::Comm comm, std::vector<T> &data, 
+    void sort_range(RBC::Comm comm, std::vector<T> &data, 
             long long global_elements, Compare comp) {
         assert(comm.GetMpiComm() != MPI_COMM_NULL);
         
+        double total_start = getTime();
         parent_comm = comm.GetMpiComm();
         this->data = &data;
         
@@ -124,15 +97,113 @@ public:
 
         delete[] buffer;
         
+        double start, end;
+        if (barriers)
+            RBC::Barrier(comm);
+        start = getTime();
         sortTwoPEIntervals(comp);
+        end = getTime();
+        t_sort_two = end - start;
+        
+        start = getTime();
         sortLocalIntervals(comp);
+        end = getTime();
+        t_sort_local = end - start;
+
+        double total_end = getTime();
+        t_runtime = (total_end - total_start);
+    }
+    
+    int getDepth() {
+        return depth;
     }
     
     /*
-     * Returns the depth of the recursion that was reached 
+     * Get timers and their names
      */
-    int getDepth() {
-        return depth;
+    void getTimers(std::vector<std::string> &timer_names,
+	    std::vector<double> &max_timers, RBC::Comm comm) {
+        std::vector<double> timers;
+        int size, rank;
+        RBC::Comm_size(comm, &size);     
+        RBC::Comm_rank(comm, &rank);
+        if (barriers) {
+            timers.push_back(t_pivot);
+            timer_names.push_back("pivot");
+            timers.push_back(t_partition);
+            timer_names.push_back("partition");
+            timers.push_back(t_calculate);
+            timer_names.push_back("calculate");
+            timers.push_back(t_exchange);
+            timer_names.push_back("exchange");
+//            timers.push_back(t_sort_two);
+//            timer_names.push_back("sort_two");
+//            timers.push_back(t_sort_local);
+//            timer_names.push_back("sort_local");
+            timers.push_back(t_sort_local + t_sort_two);
+            timer_names.push_back("base_cases");
+            double sum = 0.0;
+            for (size_t i = 0; i < timers.size(); i++)
+                sum += timers[i];
+            timers.push_back(sum);
+            timer_names.push_back("sum");
+        }
+//        timers.push_back(bc1_elements);
+//        timer_names.push_back("BaseCase1_elements");
+//        timers.push_back(bc2_elements);
+//        timer_names.push_back("BaseCase2_elements");
+//        timers.push_back(t_runtime);
+//        timer_names.push_back("runtime");
+        timers.push_back(depth);
+        timer_names.push_back("depth");
+        timers.push_back(t_create_comms);
+        timer_names.push_back("create_comms");
+
+        for (size_t i = 0; i < timers.size(); i++) {
+            double time = 0.0;
+            RBC::Reduce(&timers[i], &time, 1, MPI_DOUBLE, MPI_MAX, 0, comm);
+            max_timers.push_back(time);
+//            MPI_Reduce(&timers[i], &time, 1, MPI_DOUBLE, MPI_MIN, 0, comm);
+//            min_timers.push_back(time);
+//            MPI_Reduce(&timers[i], &time, 1, MPI_DOUBLE, MPI_SUM, 0, comm);
+//            avg_timers.push_back(time / size);
+        }
+        
+//        double runtimes[size];
+//        MPI_Allgather(&t_runtime, 1, MPI_DOUBLE, runtimes, 1, MPI_DOUBLE, comm);
+//        double t_max = 0.0;
+//        int rank_max = 0;
+//        for (int i = 0; i < size; i++) {
+//            if (runtimes[i] > t_max) {
+//                t_max = runtimes[i];
+//                rank_max = i;
+//            }
+//        }        
+//        if (rank_max == 0) {
+//            max_timers.push_back(bc1_elements);
+//            timer_names.push_back("slow_BaseCase1_elements");
+//            max_timers.push_back(bc2_elements);
+//            timer_names.push_back("slow_BaseCase2_elements");
+//            max_timers.push_back(depth);
+//            timer_names.push_back("slow_depth");
+//        } else {
+//            if (rank == rank_max) {
+//                double slowest_timers[3] = {bc1_elements,
+//                    bc2_elements, static_cast<double>(depth)};
+//                MPI_Send(slowest_timers, 5, MPI_DOUBLE, 0, 0, comm);
+//            }
+//            if (rank == 0) {
+//                double slowest_timers[5];
+//                MPI_Recv(slowest_timers, 5, MPI_DOUBLE, rank_max, 0, comm,
+//                        MPI_STATUS_IGNORE);   
+//                max_timers.push_back(slowest_timers[0]);
+//                timer_names.push_back("slow_BaseCase1_elements");
+//                max_timers.push_back(slowest_timers[1]);
+//                timer_names.push_back("slow_BaseCase2_elements");
+//                max_timers.push_back(slowest_timers[2]);
+//                timer_names.push_back("slow_depth");
+//            }
+//        }
     }
 
 private:
@@ -142,50 +213,80 @@ private:
      */
     template<class Compare>
     void quickSort(QSInterval_SQS<T> &ival, Compare comp) {
+        depth++;
+        
         //Check if recursion should be ended 
         if (isBaseCase(ival))
             return;
         
-        depth++;
         
         T pivot;
         long long split_idx;
+        double t_start, t_end;
+        t_start = startTime(ival.comm);
         bool zero_global_elements;
         getPivot(ival, pivot, split_idx, comp, zero_global_elements);
+        t_end = getTime();
+        t_pivot += (t_end - t_start);
         
         if (zero_global_elements)
             return;
         
+//        int comm_start = ival.comm.GetFirst();
+//        std::cout << W(depth) << W(comm_start) << W(ival.rank) << "Pivot" << std::endl;
+        
+        t_start = startTime(ival.comm);
         long long bound1, bound2;        
         partitionData(ival, pivot, split_idx, &bound1, &bound2, comp);
+        t_end = getTime();
+        t_partition += (t_end - t_start);
         
-        calculateExchangeData(ival, bound1, split_idx, bound2);
+//        std::cout << W(depth) << W(comm_start) << W(ival.rank) << "Partition" << std::endl;
 
+        t_start = startTime(ival.comm);
+        calculateExchangeData(ival, bound1, split_idx, bound2);
+        t_end = getTime();
+        t_calculate += (t_end - t_start);        
+        
+//        std::cout << W(depth) << W(comm_start) << W(ival.rank) << "CalculateExchange" << std::endl;
+	
+        t_start = startTime(ival.comm);
         exchangeData(ival);
+        t_end = getTime();
+        t_exchange += (t_end - t_start);
+        t_vec_exchange.push_back(t_end - t_start);
+        
+//        std::cout << W(depth) << W(comm_start) << W(ival.rank) << "ExchangeData" << std::endl;
 
         long long mid, offset;
         int left_size;
-        bool schizophrenic;
-        calculateSplit(ival, left_size, offset, schizophrenic, mid);
+        bool shizophrenic;
+        calculateSplit(ival, left_size, offset, shizophrenic, mid);
         
         RBC::Comm comm_left, comm_right;
-        createNewCommunicators(ival, left_size, schizophrenic, &comm_left, &comm_right);
+        if (use_MPI_collectives)
+            t_start = startTime_barrier(ival.comm);
+        else
+            t_start = startTime(ival.comm);
+        createNewCommunicators(ival, left_size, shizophrenic, &comm_left, &comm_right);
+        t_end = getTime();
+        t_create_comms += (t_end - t_start);
         
         QSInterval_SQS<T> ival_left, ival_right;
-        createIntervals(ival, offset, left_size, schizophrenic,
+        createIntervals(ival, offset, left_size, shizophrenic,
                 mid, comm_left, comm_right, ival_left, ival_right);
         
         bool sort_left = false, sort_right = false;
         if (ival.rank <= ival_left.end_PE)
             sort_left = true;
         if (ival.rank >= ival_left.end_PE) {
-            if (ival.rank > ival_left.end_PE || schizophrenic)
+            if (ival.rank > ival_left.end_PE || shizophrenic)
                 sort_right = true;
         }
 //        std::cout << W(depth) << W(comm_start) << W(ival.rank) << "Recursive" << std::endl;
-        
+
         if (sort_left && sort_right) {
-            schizophrenicQuickSort(ival_left, ival_right, comp);
+            shizophrenicQuickSort(ival_left, ival_right, comp);
         } else if (sort_left) {
             quickSort(ival_left, comp);
         } else if (sort_right) {
@@ -194,10 +295,10 @@ private:
     }
     
     /*
-     * Execute the Quicksort algorithm as schizophrenic PE
+     * Execute the Quicksort algorithm as shizophrenic PE
      */
     template<class Compare>
-    void schizophrenicQuickSort(QSInterval_SQS<T> &ival_left, QSInterval_SQS<T> &ival_right,
+    void shizophrenicQuickSort(QSInterval_SQS<T> &ival_left, QSInterval_SQS<T> &ival_right,
             Compare comp) {
         //Check if recursion should be ended
         if (isBaseCase(ival_left)) {
@@ -213,39 +314,60 @@ private:
 
         T pivot_left, pivot_right;
         long long split_idx_left, split_idx_right;
+        double t_start, t_end;
         
-        getPivotSchizo(ival_left, ival_right, pivot_left, pivot_right,
+        t_start = startTimeShizo(ival_left.comm, ival_right.comm);
+        getPivotShizo(ival_left, ival_right, pivot_left, pivot_right,
                        split_idx_left, split_idx_right, comp);
+        t_end = getTime();
+        t_pivot += (t_end - t_start);
+        
+        t_start = startTimeShizo(ival_left.comm, ival_right.comm);
         
         long long bound1_left, bound2_left, bound1_right, bound2_right;
         partitionData(ival_left, pivot_left, split_idx_left, &bound1_left, 
                       &bound2_left, comp);          
         partitionData(ival_right, pivot_right, split_idx_right, &bound1_right, 
                       &bound2_right, comp);  
+        t_end = getTime();
+        t_partition += (t_end - t_start);
 
-        calculateExchangeDataSchizo(ival_left, ival_right, bound1_left, split_idx_left,
+        t_start = startTimeShizo(ival_left.comm, ival_right.comm);
+        calculateExchangeDataShizo(ival_left, ival_right, bound1_left, split_idx_left,
                 bound2_left, bound1_right, split_idx_right, bound2_right);
-
-        exchangeDataSchizo(ival_left, ival_right);
+        t_end = getTime();
+        t_calculate += (t_end - t_start);
+        
+        t_start = startTimeShizo(ival_left.comm, ival_right.comm);
+        exchangeDataShizo(ival_left, ival_right);
+        t_end = getTime();
+        t_exchange += (t_end - t_start);
+        t_vec_exchange.push_back(t_end - t_start);
         
         long long mid_left, mid_right, offset_left, offset_right;
         int left_size_left, left_size_right;
-        bool schizophrenic_left, schizophrenic_right;
-        calculateSplit(ival_left, left_size_left, offset_left, schizophrenic_left, mid_left);
-        calculateSplit(ival_right, left_size_right, offset_right, schizophrenic_right, mid_right);
+        bool shizophrenic_left, shizophrenic_right;
+        calculateSplit(ival_left, left_size_left, offset_left, shizophrenic_left, mid_left);
+        calculateSplit(ival_right, left_size_right, offset_right, shizophrenic_right, mid_right);
 
         RBC::Comm left1, right1, left2, right2;
 
-        createNewCommunicatorsSchizo(ival_left, ival_right, left_size_left, schizophrenic_left,
-                left_size_right, schizophrenic_right, &left1, &right1, &left2, &right2);
+        if (use_MPI_collectives)
+            t_start = startTimeShizo_barrier(ival_left.comm, ival_right.comm);
+        else
+            t_start = startTimeShizo(ival_left.comm, ival_right.comm);
+        createNewCommunicatorsShizo(ival_left, ival_right, left_size_left, shizophrenic_left,
+                left_size_right, shizophrenic_right, &left1, &right1, &left2, &right2);
+        t_end = getTime();
+        t_create_comms += (t_end - t_start);
 
         QSInterval_SQS<T> ival_left_left, ival_right_left,
                 ival_left_right, ival_right_right;
         createIntervals(ival_left, offset_left, left_size_left,
-                schizophrenic_left, mid_left, left1, right1, 
+                shizophrenic_left, mid_left, left1, right1, 
                 ival_left_left, ival_right_left);
         createIntervals(ival_right, offset_right, left_size_right,
-                schizophrenic_right, mid_right, left2, right2, 
+                shizophrenic_right, mid_right, left2, right2, 
                 ival_left_right, ival_right_right);
         
         bool sort_left = false, sort_right = false;
@@ -271,9 +393,9 @@ private:
             sort_right = true;
         }
 
-        //Recursive call to quicksort/schizophrenicQuicksort
+        //Recursive call to quicksort/shizophrenicQuicksort
         if (sort_left && sort_right) {
-            schizophrenicQuickSort(*left_i, *right_i, comp);
+            shizophrenicQuickSort(*left_i, *right_i, comp);
         } else if (sort_left) {
             quickSort(*left_i, comp);
         } else if (sort_right) {
@@ -298,6 +420,40 @@ private:
         }
         return false;
     }
+
+    double startTime(RBC::Comm &comm) {
+        if (!barriers)
+            return getTime();
+        RBC::Request req;
+        RBC::Ibarrier(comm, &req);
+        RBC::Wait(&req, MPI_STATUS_IGNORE);        
+        return getTime();
+    }
+    
+    double startTime_barrier(RBC::Comm &comm) {
+        RBC::Request req;
+        RBC::Ibarrier(comm, &req);
+        RBC::Wait(&req, MPI_STATUS_IGNORE);        
+        return getTime();
+    }
+
+    double startTimeShizo(RBC::Comm &left_comm, RBC::Comm &right_comm) {
+        if (!barriers)
+            return getTime();        
+        RBC::Request req[2];
+        RBC::Ibarrier(left_comm, &req[0]);
+        RBC::Ibarrier(right_comm, &req[1]);
+        RBC::Waitall(2, req, MPI_STATUS_IGNORE);        
+        return getTime();
+    }
+    
+    double startTimeShizo_barrier(RBC::Comm &left_comm, RBC::Comm &right_comm) {       
+        RBC::Request req[2];
+        RBC::Ibarrier(left_comm, &req[0]);
+        RBC::Ibarrier(right_comm, &req[1]);
+        RBC::Waitall(2, req, MPI_STATUS_IGNORE);        
+        return getTime();
+    }
     
     /*
      * Selects a random element from the interval as the pivot
@@ -313,11 +469,11 @@ private:
      * Select a random element as the pivot from both intervals
      */
     template<class Compare>
-    void getPivotSchizo(QSInterval_SQS<T> const &ival_left,
+    void getPivotShizo(QSInterval_SQS<T> const &ival_left,
                         QSInterval_SQS<T> const &ival_right, T &pivot_left,
                         T &pivot_right, long long &split_idx_left, long long &split_idx_right,
                         Compare comp) {
-        PivotSelection_SQS<T>::getPivotSchizo(ival_left, ival_right, pivot_left, pivot_right,
+        PivotSelection_SQS<T>::getPivotShizo(ival_left, ival_right, pivot_left, pivot_right,
                 split_idx_left, split_idx_right, comp, generator, sample_generator);
     }
     
@@ -393,7 +549,7 @@ private:
     }
     
     
-    void calculateExchangeDataSchizo(QSInterval_SQS<T> &ival_left,
+    void calculateExchangeDataShizo(QSInterval_SQS<T> &ival_left,
             QSInterval_SQS<T> &ival_right, long long  bound1_left, long long split_left, 
             long long bound2_left, long long bound1_right, long long split_right, long long bound2_right) { 
         elementsCalculation(ival_left, bound1_left, split_left, bound2_left);
@@ -428,12 +584,12 @@ private:
     /*
      * Exchange the data with other PEs on both intervals simultaneously
      */
-    void exchangeDataSchizo(QSInterval_SQS<T> &left, QSInterval_SQS<T> &right) {
-        DataExchange_SQS<T>::exchangeDataSchizo(left, right);
+    void exchangeDataShizo(QSInterval_SQS<T> &left, QSInterval_SQS<T> &right) {
+        DataExchange_SQS<T>::exchangeDataShizo(left, right);
     }  
 
     void calculateSplit(QSInterval_SQS<T> &ival, int &left_size, long long &offset,
-            bool &schizophrenic, long long &mid) {
+            bool &shizophrenic, long long &mid) {
         assert(ival.global_small_elements != 0);
         long long last_small_element = ival.missing_first_PE + ival.global_small_elements - 1;
         
@@ -441,9 +597,9 @@ private:
         offset = ival.getOffsetFromIndex(last_small_element);
                        
         if (offset + 1 == ival.getSplitSize(left_size - 1))
-            schizophrenic = false;
+            shizophrenic = false;
         else
-            schizophrenic = true;
+            shizophrenic = true;
         
         if (ival.rank < left_size - 1)
             mid = ival.local_end;
@@ -458,12 +614,12 @@ private:
      * Splits the communicator into two new, left and right
      */
     void createNewCommunicators(QSInterval_SQS<T> &ival, long long left_size,
-            bool schizophrenic, RBC::Comm *left, RBC::Comm *right) {
+            bool shizophrenic, RBC::Comm *left, RBC::Comm *right) {
         int size;
         RBC::Comm_size(ival.comm, &size);
         int left_end = left_size - 1;
         int right_start = left_size;
-        if (schizophrenic)
+        if (shizophrenic)
             right_start--;
         int right_end = size - 1; //std::min((long long) size - 1, ival.global_elements - 1);
         right_end = std::max(right_start, right_end);
@@ -472,27 +628,27 @@ private:
         RBC::Comm_free(ival.comm);
     }
     
-    void createNewCommunicatorsSchizo(QSInterval_SQS<T> &ival_left,
+    void createNewCommunicatorsShizo(QSInterval_SQS<T> &ival_left,
             QSInterval_SQS<T> &ival_right, long long left_size_left,
-            bool schizophrenic_left, long long left_size_right, bool schizophrenic_right,
-            RBC::Comm *left_left, RBC::Comm *right_left,
-            RBC::Comm *left_right, RBC::Comm *right_right) {
+            bool shizophrenic_left, long long left_size_right, bool shizophrenic_right,
+            RBC::Comm *left_1, RBC::Comm *right_1,
+            RBC::Comm *left_2, RBC::Comm *right_2) {
         if (ival_left.blocking_priority) {
-            createNewCommunicators(ival_left, left_size_left, schizophrenic_left, left_left, right_left);
-            createNewCommunicators(ival_right, left_size_right, schizophrenic_right, left_right, right_right);
+            createNewCommunicators(ival_left, left_size_left, shizophrenic_left, left_1, right_1);
+            createNewCommunicators(ival_right, left_size_right, shizophrenic_right, left_2, right_2);
         } else {
-            createNewCommunicators(ival_right, left_size_right, schizophrenic_right, left_right, right_right);
-            createNewCommunicators(ival_left, left_size_left, schizophrenic_left, left_left, right_left);
+            createNewCommunicators(ival_right, left_size_right, shizophrenic_right, left_2, right_2);
+            createNewCommunicators(ival_left, left_size_left, shizophrenic_left, left_1, right_1);
         }
     }
    
     void createIntervals(QSInterval_SQS<T> &ival, long long offset, int left_size,
-            bool schizophrenic,
+            bool shizophrenic,
             long long mid, RBC::Comm &comm_left, RBC::Comm &comm_right, 
             QSInterval_SQS<T> &ival_left,
             QSInterval_SQS<T> &ival_right) {
         long long missing_last_left, missing_first_right;
-        if (schizophrenic) {
+        if (shizophrenic) {
             missing_last_left = ival.getSplitSize(left_size - 1) - (offset + 1);
             missing_first_right = offset + 1; 
         } else {
@@ -508,7 +664,7 @@ private:
             extra_elements_left = 0;
             split_size_left = ival.split_size + 1;
             extra_elements_right = ival.extra_elements - left_size;
-            if (schizophrenic)
+            if (shizophrenic)
                 extra_elements_right++;
         } else {
             extra_elements_left = ival.extra_elements;
@@ -545,7 +701,7 @@ private:
      */
     template<class Compare>
     void sortTwoPEIntervals(Compare comp) { 
-        SequentialSort_SQS<T>::sortTwoPEIntervals(comp, two_PE_intervals);
+        bc2_elements = SequentialSort_SQS<T>::sortTwoPEIntervals(comp, two_PE_intervals);
         for (size_t i = 0; i < two_PE_intervals.size(); i++)
             RBC::Comm_free(two_PE_intervals[i].comm);
     }
@@ -555,19 +711,33 @@ private:
     template<class Compare>
     void sortLocalIntervals(Compare comp) {
         SequentialSort_SQS<T>::sortLocalIntervals(comp, local_intervals);
+        bc1_elements = 0.0;
         for (size_t i = 0; i < local_intervals.size(); i++) {
+            bc1_elements += local_intervals[i].local_elements;
             RBC::Comm_free(local_intervals[i].comm);
         }
     }
 
+
+    /*
+     * Returns the current time
+     */
+    double getTime() {
+        return MPI_Wtime();
+    }
+
     int depth = 0, seed;
+    double t_pivot = 0.0, t_calculate = 0.0, t_exchange = 0.0, t_partition = 0.0,
+            t_sort_two = 0.0, t_sort_local = 0.0, t_create_comms = 0.0, t_runtime,
+            bc1_elements, bc2_elements;
+    std::vector<double> t_vec_exchange, exchange_times{0.0, 0.0, 0.0, 0.0};
     T *buffer;
     std::vector<T> *data;
     MPI_Datatype mpi_type;
     MPI_Comm parent_comm;
     std::mt19937_64 generator, sample_generator;
     std::vector<QSInterval_SQS<T>> local_intervals, two_PE_intervals;
-    bool add_pivot;
+    bool barriers, split_MPI_comm, use_MPI_collectives, add_pivot;
     long long min_samples;
 };
 

@@ -1,5 +1,5 @@
 /*****************************************************************************
- * This file is part of the Project SchizophrenicQuicksort
+ * This file is part of the Project ShizophrenicQuicksort
  * 
  * Copyright (c) 2016-2017, Armin Wiebigke <armin.wiebigke@gmail.com>
  * Copyright (C) 2016-2017, Michael Axtmann <michael.axtmann@kit.edu>
@@ -11,15 +11,15 @@
 #ifndef SQS_PIVOTSELECTION_HPP
 #define SQS_PIVOTSELECTION_HPP
 
-#include "QuickSort.hpp"
 #include <vector>
-#include "Constants.hpp"
-#include "QSInterval.hpp"
-#include "../../RangeBasedComm/RBC.hpp"
 #include <random>
 #include <algorithm>
 #include <cmath>
 #include <cassert>
+
+#include "../Constants.hpp"
+#include "QSInterval.hpp"
+#include "../../RangeBasedComm/RBC.hpp"
 
 #define W(X) #X << "=" << X << ", "
 
@@ -40,7 +40,7 @@ public:
         else
             getLocalSamples_communicate(ival, global_samples, local_samples, comp,
                     generator);
-        
+                
         if (global_samples == -1) {
             zero_global_elements = true;
             return;
@@ -67,7 +67,7 @@ public:
         };
 
         //Gather the samples to rank 0
-        TbSplitter<T>* all_samples;
+        TbSplitter<T>* all_samples = nullptr;
         if (ival.rank == 0)
             all_samples = new TbSplitter<T>[global_samples];
 
@@ -100,7 +100,7 @@ public:
      * Select a random element as the pivot from both intervals
      */
     template<class Compare>
-    static void getPivotSchizo(QSInterval_SQS<T> const &ival_left,
+    static void getPivotShizo(QSInterval_SQS<T> const &ival_left,
             QSInterval_SQS<T> const &ival_right, T &pivot_left,
             T &pivot_right, long long &split_idx_left, long long &split_idx_right,
             Compare comp, std::mt19937_64 &generator, std::mt19937_64 &sample_generator) {
@@ -177,7 +177,7 @@ private:
         total_samples = getSampleCount(ival.number_of_PEs,
                 ival.getIndexFromRank(ival.number_of_PEs), ival.min_samples,
 		ival.add_pivot);        
-        int max_height = ceil(log2(ival.number_of_PEs));
+        int max_height = std::ceil(std::log2(ival.number_of_PEs));
         int own_height = 0;
         for (int i = 0; ((ival.rank >> i) % 2 == 0) && (i < max_height); i++)
             own_height++;
@@ -188,10 +188,10 @@ private:
         generator.seed(ival.seed);
         
         for (int height = max_height; height > 0; height--) {
-            if (first_PE + pow(2, height - 1) > last_PE) {
+            if (first_PE + std::pow(2, height - 1) > last_PE) {
                 //right subtree is empty
             } else {
-                int left_size = pow(2, height - 1);
+                int left_size = std::pow(2, height - 1);
                 int right_size = last_PE - first_PE + 1 - left_size;
                 assert(left_size > 0);
                 assert(right_size > 0);
@@ -215,7 +215,7 @@ private:
                 long long samples_left = binom_distr(generator);
                 long long samples_right = local_samples - samples_left;
 
-                int mid_PE = first_PE + pow(2, height - 1);
+                int mid_PE = first_PE + std::pow(2, height - 1);
                 if (ival.rank < mid_PE) {
                     //left side
                     last_PE = mid_PE - 1;
@@ -254,7 +254,7 @@ private:
         RBC::Comm_rank(comm, &rank);
 
         // Calculate height in tree
-        int logp = ceil(log2(comm_size));
+        int logp = std::ceil(std::log2(comm_size));
         int height = 0;
         while ((rank >> height) % 2 == 0 && height < logp)
             height++;
@@ -343,7 +343,7 @@ private:
             return -1;
         
         long long k_1 = 16, k_2 = 50, k_3 = min_samples; // tuning parameters
-        long long count_1 = k_1 * log2(comm_size);
+        long long count_1 = k_1 * std::log2(comm_size);
         long long count_2 = (global_elements / comm_size) / k_2;
         long long sample_count = std::max(count_1, std::max(count_2, k_3));
         if (add_pivot)

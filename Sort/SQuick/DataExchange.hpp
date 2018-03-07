@@ -1,5 +1,5 @@
 /*****************************************************************************
- * This file is part of the Project SchizophrenicQuicksort
+ * This file is part of the Project ShizophrenicQuicksort
  * 
  * Copyright (c) 2016-2017, Armin Wiebigke <armin.wiebigke@gmail.com>
  * Copyright (C) 2016-2017, Michael Axtmann <michael.axtmann@kit.edu>
@@ -11,18 +11,18 @@
 #ifndef SQS_DATAEXCHANGE_HPP
 #define SQS_DATAEXCHANGE_HPP
 
-#include "../../RangeBasedComm/RBC.hpp"
-#include "QSInterval.hpp"
-#include "Constants.hpp"
 #include <mpi.h>
 #include <cassert>
 #include <cstring>
 
-#define W(X) #X << "=" << X << ", "
+#include "../../RangeBasedComm/RBC.hpp"
+#include "QSInterval.hpp"
+#include "../Constants.hpp"
+#include "../RequestVector.hpp"
 
 template<typename T>
 class DataExchange_SQS {
-    
+
 public:
     
     /*
@@ -30,11 +30,11 @@ public:
      */
     static void exchangeData(QSInterval_SQS<T> &ival) {
         long long recv_small = 0, recv_large = 0, recv_count_small = 0, recv_count_large = 0;
-        std::vector<std::unique_ptr<RBC::Request>> requests;
+        RequestVector requests;
         //copy current data (that will be send) into buffer
         copyDataToBuffer(ival);
 
-        //calculate how much data need to be send and received, then start non-blocking sends
+        //calculate how much data need to be received
         getRecvCount(ival, recv_small, recv_large,
                 recv_count_small, recv_count_large);
                 
@@ -59,18 +59,17 @@ public:
                             data_ptr + ival.local_start + recv_small + recv_count_large,
                             recv_count_large, recv_large, Constants::EXCHANGE_LARGE, ival.mpi_type);
             }
-            TestallVector(requests);
         }
-        WaitallVector(requests);
+        requests.waitAll();
     }
     
     /*
      * Exchange the data with other PEs on both intervals simultaneously
      */
-    static void exchangeDataSchizo(QSInterval_SQS<T> &ival_left, QSInterval_SQS<T> &ival_right) {
+    static void exchangeDataShizo(QSInterval_SQS<T> &ival_left, QSInterval_SQS<T> &ival_right) {
         long long recv_small_l = 0, recv_large_l = 0, recv_count_small_l = 0, recv_count_large_l = 0;
         long long recv_small_r = 0, recv_large_r = 0, recv_count_small_r = 0, recv_count_large_r = 0;
-        std::vector<std::unique_ptr<RBC::Request>> requests;
+        RequestVector requests;
         
         //copy current data (that will be send) into buffer        
         copyDataToBuffer(ival_left);
@@ -113,9 +112,9 @@ public:
             }
 
             //test all send and receive operations
-            TestallVector(requests);
+            requests.testAll();
         }
-        WaitallVector(requests);
+        requests.waitAll();
     }  
 
 private:
@@ -147,7 +146,7 @@ private:
      * Calculate how much data need to be send then start non-blocking sends
      */
     static void sendData(QSInterval_SQS<T> &ival,
-            std::vector<std::unique_ptr<RBC::Request>> &requests, long long &recv_small, 
+            RequestVector &requests, long long &recv_small, 
             long long &recv_large, long long &recv_count_small, long long &recv_count_large) {
         long long small_start = ival.local_start;
         long long large_start = ival.local_start + ival.local_small_elements;
@@ -174,7 +173,7 @@ private:
      */
     static int sendDataRecursive(QSInterval_SQS<T> &ival, long long local_start_idx,
             long long local_end_idx, long long global_start_idx,
-            T *recv_buffer, std::vector<std::unique_ptr<RBC::Request>> &requests,
+            T *recv_buffer, RequestVector &requests,
             int tag) {
         // return if no elements need to be send
         if (local_start_idx >= local_end_idx)
@@ -190,9 +189,10 @@ private:
             copied_local += send_count;
             std::memcpy(recv_buffer, ival.buffer + local_start_idx, send_count * sizeof(T));            
         } else {
-            requests.push_back(std::unique_ptr<RBC::Request>(new RBC::Request));
+            RBC::Request req;
             RBC::Isend(ival.buffer + local_start_idx, send_count, ival.mpi_type,
-                    target_rank, tag, ival.comm, requests.back().get());
+                    target_rank, tag, ival.comm, &req);
+            requests.push_back(req);
         }
         
         if (local_elements > send_count) {
@@ -207,7 +207,7 @@ private:
      /*
      * Starts a non-blocking receive if data can be received
      */
-    static void receiveData(RBC::Comm const &comm, std::vector<std::unique_ptr<RBC::Request>> &requests,
+    static void receiveData(RBC::Comm const &comm, RequestVector &requests,
             void *recvbuf, long long &recv_count, long long recv_total, int tag,
             MPI_Datatype mpi_type) {
         if (recv_count < recv_total) {
@@ -220,9 +220,10 @@ private:
 //                std::cout << W(recv_total) << W(recv_count) << W(count) << std::endl;
                 assert(recv_count + count <= recv_total);
                 int source = RBC::get_Rank_from_Status(comm, status);
-                requests.push_back(std::unique_ptr<RBC::Request>(new RBC::Request));
+                RBC::Request req;
                 RBC::Irecv(recvbuf, count, mpi_type, source,
-                        tag, comm, requests.back().get());
+                        tag, comm, &req);
+                requests.push_back(req);
                 recv_count += count;
             }
         }
@@ -247,32 +248,6 @@ private:
         
         copy = ival.local_end - ival.bound2;
         std::memcpy(ival.buffer + ival.bound2, data_ptr + ival.bound2, copy * sizeof(T));
-    }
-
-    /*
-     * Call the test function for all requests of the vector
-     */
-    static void TestallVector(std::vector<std::unique_ptr<RBC::Request>> &requests) {
-        for (size_t i = 0; i < requests.size(); i++) {
-            int tmp_flag;
-            RBC::Test(requests[i].get(), &tmp_flag, MPI_STATUS_IGNORE);
-        }
-    }
-
-    /*
-     * Wait until all operations of the requests of the vector are completed 
-     */
-    static void WaitallVector(std::vector<std::unique_ptr<RBC::Request>> &requests) {
-        int flag = 0;
-        while(flag == 0) {
-            flag = 1;
-            for (size_t i = 0; i < requests.size(); i++) {
-                int tmp_flag;
-                RBC::Test(requests[i].get(), &tmp_flag, MPI_STATUS_IGNORE);
-                if (tmp_flag == 0)
-                    flag = 0;
-            }
-        }
     }
     
 };

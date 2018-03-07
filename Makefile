@@ -23,7 +23,11 @@ $(LIBDIR)/lib_rbc.a : $(RANGE_OBJ)
 	ar rcs $@ $(RANGE_OBJ)
 
 # Compile Example file
-$(TARGETDIR)/Example.o : $(SRCDIR)/example.cpp $(SRCDIR)/Sort/SQuick.hpp
+SORT_HEADER = ${addprefix Sort/, Constants.hpp RequestVector.hpp SQuick.hpp \
+	    SortingDatatype.hpp TbSplitter.hpp} \
+	${addprefix ${SRCDIR}/Sort/SQuick/, DataExchange.hpp PivotSelection.hpp \
+	    QSInterval.hpp QuickSort.hpp SequentialSort.hpp}
+$(TARGETDIR)/Example.o : $(SRCDIR)/example.cpp $(SORT_HEADER)
 	$(CXX) -c -o $@ $<
 	
 # Compile RangeBasedComm source files	
