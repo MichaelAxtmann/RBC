@@ -14,22 +14,119 @@
 #include <vector>
 #include <memory>
 #include <ostream>
+
 #include "RangeGroup.hpp"
 
-namespace RBC {
+namespace RBC {    
+
+    namespace _internal {
+
+        /**
+         * Virtual superclass for the specific requests for each communication operation
+         */
+        class RequestSuperclass {
+        public:
+
+            RequestSuperclass() {
+            };
+            
+            virtual ~RequestSuperclass() {
+            };
+
+            //test method has to be implemented by subclasses
+            virtual int test(int *flag, MPI_Status *status) = 0;
+        };
+    }
     
     /**
-     * Virtual superclass for the specific requests for each communication operation.
-     * The header Requests.h defines the subclasses.
+     * Request class for Range communication.
+     * Each non-blocking operation returns a request that is then used to call
+     * the Test, Testall, Wait or Waitall operation.
      */
-    class R_Req {
+    class Request {
     public:
 
-        virtual ~R_Req() {};
-        R_Req() {};
-        //test method has to be implemented by subclasses
-        virtual int test(int *flag, MPI_Status *status) = 0;
+        Request();
+        void set(const std::shared_ptr<_internal::RequestSuperclass>& req);
+        Request& operator=(const Request& req);
+        int test(int *flag, MPI_Status *status);
+
+    private:
+        std::shared_ptr<_internal::RequestSuperclass> req_ptr;
     };
+    
+    /**
+     * Ranged based communicator
+     */
+    class Comm {
+    public:
+        
+        /**
+         * Create an empty communicator.
+         * Use RBC::Create_Comm_from_MPI to create a usable communicator.
+         */
+        Comm();
+        
+        ~Comm();
+        
+        /**
+         * Only for internal usage
+         */
+        Comm(MPI_Comm mpi_comm, bool use_mpi_collectives, bool split_mpi_comm, 
+                bool use_comm_create);
+        /**
+         * Only for internal usage
+         */
+        Comm(RangeGroup range_groups, Comm parent_comm);
+        /**
+         * Only for internal usage
+         */
+        Comm(MPI_Comm mpi_comm, Comm parent_comm);
+        
+        /**
+         * Returns the underlying MPI communicator 
+         */
+        const MPI_Comm& GetMpiComm() const;
+        
+        /**
+         * Returns the rank on the RBC communicator from a rank on the MPI communicator 
+         */
+        int MpiRankToRangeRank(int mpi_rank) const;
+        
+        /**
+         * Returns the rank on the MPI communicator from a rank on the RBC communicator 
+         */
+        int RangeRankToMpiRank(int range_rank) const;        
+        
+        /**
+         * Returns true if MPI implementations of collective operations are used whenever possible
+         */
+        bool useMPICollectives() const;
+        
+        /**
+         * Returns true if the underlying MPI communicator is split in communicator split operations
+         */
+        bool splitMPIComm() const;        
+        
+        /**
+         * Returns true if the given rank on the MPI communicator is part of the 
+         * RBC communicator 
+         */
+        bool includesMpiRank(int rank) const;
+        
+        /**
+         * Returns true if the communicator contains no ranks 
+         */
+        bool isEmpty() const;
+                        
+        void init();
+        MPI_Comm mpi_comm;
+        bool use_mpi_collectives, split_mpi_comm, use_comm_create;
+        bool is_mpi_comm, free_mpi_comm;
+        RangeGroup range_group;
+        int rank, size;
+    };
+    std::ostream& operator<<(std::ostream& os, const Comm& comm);
     
     namespace Tag_Const {
         const int 
@@ -44,87 +141,6 @@ namespace RBC {
             SCANANDBCAST    = 1000130;
     };
     
-    /**
-     * Ranged based communicator
-     */
-    class Comm {
-    public:
-        
-        /**
-         * Create an empty communicator.
-         * Use Create_Comm_from_MPI to make a usable communicator.
-         */
-        Comm();
-        
-        /**
-         * Returns the underlying MPI communicator 
-         */
-        const MPI_Comm& GetMpiComm() const;
-        
-        /**
-         * Returns the rank on the range communicator from a rank on the MPI communicator 
-         */
-        int MpiRankToRangeRank(int mpi_rank) const;
-        
-        /**
-         * Returns the rank on the MPI communicator from a rank on the range communicator 
-         */
-        int RangeRankToMpiRank(int range_rank) const;
-        
-        /**
-         * Returns true if MPI implementations of collective operations are used
-         */
-        bool useMPICollectives() const;
-        
-        /**
-         * Returns true if the given rank on the MPI communicator is part of the 
-         * range communicator 
-         */
-        bool includesMpiRank(int rank) const;
-        
-        /**
-         * Returns true if the communicator contains no ranks 
-         */
-        bool isEmpty() const;
-        
-        /*
-         * Creates a Range comm including the MPI ranks first to last on the given MPI comm
-         */
-        Comm(MPI_Comm mpi_comm, RangeGroup range_groups, bool use_MPI_collectives, 
-                bool split_MPI_comm, bool is_MPI_comm = false, bool delete_MPI_comm = false);
-        Comm(MPI_Comm mpi_comm, bool use_MPI_collectives, 
-                bool split_MPI_comm, bool is_MPI_comm = false, bool delete_MPI_comm = false);
-        void init();
-        MPI_Comm mpi_comm;
-        bool use_MPI_collectives, split_MPI_comm, is_MPI_comm, free_MPI_comm;
-        RangeGroup range_group;
-        int rank, size;
-
-        /*
-         * Returns true if the rank (on the MPI comm) is part of this Range comm
-         */
-    };
-    std::ostream& operator<<(std::ostream& os, const Comm& comm);
-
-    /**
-     * Request class for Range communication.
-     * Each non-blocking operation returns a request that is then used to call
-     * the Test, Testall, Wait or Waitall operation.
-     */
-    class Request {
-
-    public:
-        
-        Request();
-        //Request acts like a pointer to a R_Req
-        Request(R_Req *req);
-        R_Req& operator*();
-        R_Req* operator->();
-        void operator=(std::unique_ptr<R_Req> req);
-
-        std::unique_ptr<R_Req> req_ptr;
-    };  
-
     /**
      * Non-blocking broadcast
      * @param buffer Buffer where the broadcast value will be stored
@@ -697,10 +713,29 @@ namespace RBC {
      * Create a new communicator from a MPI communicator
      * The communicatorr includes all ranks of the MPI communicator
      * @param mpi_comm the MPI communicator
+     * @param use_mpi_collectives use native MPI collectives if possible
+     * @param split_mpi_comm split the MPI communicator when the RBC communicator is split
+     * @param use_comm_create when splitting the MPI communicator, use MPI_Comm_create 
+     *  instead of MPI_Comm_split
      * @param comm returns the new communicator
      */
     int Create_Comm_from_MPI(MPI_Comm mpi_comm, RBC::Comm *rcomm,
-        bool use_MPI_collectives = false, bool split_MPI_comm = false);
+        bool use_mpi_collectives = false, bool split_mpi_comm = false,
+        bool use_comm_create = true);
+    
+    /**
+     * Create a new communicator from a MPI communicator
+     * The communicatorr includes all ranks of the MPI communicator
+     * @param mpi_comm the MPI communicator
+     * @param use_mpi_collectives use native MPI collectives if possible
+     * @param split_mpi_comm split the MPI communicator when the RBC communicator is split
+     * @param use_comm_create when splitting the MPI communicator, use MPI_Comm_create 
+     *  instead of MPI_Comm_split
+     * @return the new communicator
+     */
+    RBC::Comm Create_Comm_from_MPI(MPI_Comm mpi_comm,
+        bool use_mpi_collectives = false, bool split_mpi_comm = false,
+        bool use_comm_create = true);
     
     /**
      * Create a new communicator that includes a subgroup of ranks [first, last]
@@ -712,6 +747,19 @@ namespace RBC {
      * @param new_comm return the new communicator
      */
     int Comm_create(RBC::Comm const &comm, RBC::Comm *new_comm,
+        int first, int last, int stride = 1);
+    
+    /**
+     * Create a new communicator that includes a subgroup of ranks [first, last]
+     * of the ranks from the old communicator
+     * All processes in comm have to call this function
+     * @param comm old communicator
+     * @param first first rank from the old communicator that is included in the new communicator
+     * @param last last rank from the old communicator that is included in the new communicator
+     * @param new_comm return the new communicator
+     * @return the new communicator
+     */
+    RBC::Comm Comm_create(RBC::Comm const &comm,
         int first, int last, int stride = 1);
     
     /**
@@ -746,7 +794,7 @@ namespace RBC {
      * @param comm the Range::Comm including the MPI communicator
      * @param parent_comm this MPI communicator will not be freed
      */
-    int Comm_free(RBC::Comm const &comm);
+    int Comm_free(RBC::Comm &comm);
     
     /**
      * Returns the rank in the communicator of the source from a MPI_Status

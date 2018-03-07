@@ -8,39 +8,44 @@
 ******************************************************************************/
 
 #include <mpi.h>
+
 #include "../RBC.hpp"
-#include "../Requests.hpp"
 
-int RBC::Recv(void* buf, int count, MPI_Datatype datatype, int source, int tag,
-        RBC::Comm const &comm, MPI_Status *status) {
-    return MPI_Recv(buf, count, datatype, comm.RangeRankToMpiRank(source), tag, comm.mpi_comm, status);
-}
+namespace RBC {
 
-/*
- * Request for the receive
- */
-class Range_Requests::Irecv : public RBC::R_Req {
-public:
-    Irecv(void *buffer, int count, MPI_Datatype datatype, int source,
-            int tag, RBC::Comm const &comm);
-    int test(int *flag, MPI_Status *status);
-private:
-    void *buffer;
-    int count, source, tag;
-    MPI_Datatype datatype;
-    RBC::Comm comm;
-    bool receiving;
-    MPI_Request request;
-};
+    int Recv(void* buf, int count, MPI_Datatype datatype, int source, int tag,
+            Comm const &comm, MPI_Status *status) {
+        return MPI_Recv(buf, count, datatype, comm.RangeRankToMpiRank(source), tag, comm.mpi_comm, status);
+    }
 
-int RBC::Irecv(void* buffer, int count, MPI_Datatype datatype, int source, int tag,
-        RBC::Comm const &comm, RBC::Request *request) {    
-    *request = std::unique_ptr<R_Req>(new Range_Requests::Irecv(buffer, count, 
+    namespace _internal {
+        /*
+         * Request for the receive
+         */
+        class IrecvReq : public RequestSuperclass {
+        public:
+            IrecvReq(void *buffer, int count, MPI_Datatype datatype, int source,
+                    int tag, Comm const &comm);
+            int test(int *flag, MPI_Status *status);
+        private:
+            void *buffer;
+            int count, source, tag;
+            MPI_Datatype datatype;
+            Comm comm;
+            bool receiving;
+            MPI_Request request;
+        };
+    }
+    
+    int Irecv(void* buffer, int count, MPI_Datatype datatype, int source, int tag,
+        Comm const &comm, Request *request) {    
+    request->set(std::make_shared<_internal::IrecvReq>(buffer, count, 
             datatype, source, tag, comm));
     return 0;
-};
+    }
+}
 
-Range_Requests::Irecv::Irecv(void *buffer, int count, MPI_Datatype datatype,
+RBC::_internal::IrecvReq::IrecvReq(void *buffer, int count, MPI_Datatype datatype,
         int source, int tag, RBC::Comm const &comm) : buffer(buffer), count(count),
         source(source), tag(tag), datatype(datatype), comm(comm), receiving(false) {      
     if (source != MPI_ANY_SOURCE) {
@@ -53,7 +58,7 @@ Range_Requests::Irecv::Irecv(void *buffer, int count, MPI_Datatype datatype,
     }
 };
 
-int Range_Requests::Irecv::test(int *flag, MPI_Status *status) {    
+int RBC::_internal::IrecvReq::test(int *flag, MPI_Status *status) {    
     if (receiving) {
         return MPI_Test(&request, flag, status);
     } else {

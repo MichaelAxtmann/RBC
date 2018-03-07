@@ -4,8 +4,8 @@ CXX = mpic++ -march=native -std=c++11 -O3 -DNDEBUG -g -Wall
 	
 TARGETDIR = build
 SRCDIR = .
+LIBDIR = lib
 
-LIBDIR = $(TARGETDIR)/lib
 SRCDIR_RANGE = $(SRCDIR)/RangeBasedComm
 TARGETDIR_RANGE = $(TARGETDIR)/RBC
 	
@@ -27,7 +27,7 @@ $(TARGETDIR)/Example.o : $(SRCDIR)/example.cpp $(SRCDIR)/Sort/SQuick.hpp
 	$(CXX) -c -o $@ $<
 	
 # Compile RangeBasedComm source files	
-RANGE_HEADER = $(addprefix $(SRCDIR_RANGE)/,RBC.hpp Requests.hpp)
+RANGE_HEADER = $(addprefix $(SRCDIR_RANGE)/,RBC.hpp)
 MPI_RANGED_HEADER = $(addprefix $(SRCDIR_RANGE)/,RangeGroup.hpp)
 
 $(TARGETDIR_RANGE)/RBC.o : $(SRCDIR_RANGE)/RBC.cpp $(RANGE_HEADER) $(MPI_RANGED_HEADER)

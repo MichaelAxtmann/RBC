@@ -13,32 +13,46 @@
 #include <iostream>
 
 #include "RBC.hpp"
-#include "Requests.hpp"
 #include "RangeGroup.hpp"
-
-#define W(X) #X << "=" << X << " "
 
 RBC::Comm::Comm() : mpi_comm(MPI_COMM_NULL), rank(-1), size(0) {
 }
 
-RBC::Comm::Comm(MPI_Comm mpi_comm, bool use_MPI_collectives,
-        bool split_MPI_comm, bool is_MPI_comm, bool free_MPI_comm)
-        : mpi_comm(mpi_comm), use_MPI_collectives(use_MPI_collectives),
-        split_MPI_comm(split_MPI_comm), is_MPI_comm(is_MPI_comm),
-        free_MPI_comm(free_MPI_comm) {
+RBC::Comm::~Comm() {
+}
+
+// Create from MPI_Comm
+RBC::Comm::Comm(MPI_Comm mpi_comm, bool use_mpi_collectives,
+        bool split_mpi_comm, bool use_comm_create)
+        : mpi_comm(mpi_comm), use_mpi_collectives(use_mpi_collectives),
+        split_mpi_comm(split_mpi_comm), use_comm_create(use_comm_create),
+        is_mpi_comm(true), free_mpi_comm(false)  {
     int size;
     MPI_Comm_size(mpi_comm, &size);
     range_group = RangeGroup(0, size - 1, 1);
     init();
 }
 
-RBC::Comm::Comm(MPI_Comm mpi_comm, RangeGroup range_group, bool use_MPI_collectives,
-        bool split_MPI_comm, bool is_MPI_comm, bool free_MPI_comm)
-        : mpi_comm(mpi_comm), use_MPI_collectives(use_MPI_collectives),
-        split_MPI_comm(split_MPI_comm), is_MPI_comm(is_MPI_comm),
-        free_MPI_comm(free_MPI_comm), range_group(range_group) {
+// Create from RBC::Comm without MPI_Comm split
+RBC::Comm::Comm(RangeGroup range_group, Comm parent_comm)
+        : mpi_comm(parent_comm.mpi_comm), use_mpi_collectives(parent_comm.use_mpi_collectives),
+        split_mpi_comm(parent_comm.split_mpi_comm), use_comm_create(parent_comm.use_comm_create),
+        is_mpi_comm(false), free_mpi_comm(false), 
+        range_group(range_group) {
     init();
 }
+
+// Create from RBC::Comm with MPI_Comm_split
+RBC::Comm::Comm(MPI_Comm mpi_comm, RBC::Comm parent_comm)
+        : mpi_comm(mpi_comm), use_mpi_collectives(parent_comm.use_mpi_collectives),
+        split_mpi_comm(parent_comm.split_mpi_comm), use_comm_create(parent_comm.use_comm_create),
+        is_mpi_comm(true), free_mpi_comm(true) {    
+    int size;
+    MPI_Comm_size(mpi_comm, &size);
+    range_group = RangeGroup(0, size - 1, 1);
+    init();
+}
+
 
 void RBC::Comm::init() {
     assert(MPI_COMM_NULL != mpi_comm);
@@ -50,35 +64,41 @@ void RBC::Comm::init() {
         rank = -1;
     size = range_group.getSize();    
     
-    if (!is_MPI_comm)
-        assert(!split_MPI_comm);
-    if (free_MPI_comm)
-        assert(is_MPI_comm);
+    if (!is_mpi_comm)
+        assert(!split_mpi_comm);
+    if (free_mpi_comm)
+        assert(is_mpi_comm);
 }
 
 
 int RBC::Create_Comm_from_MPI(MPI_Comm mpi_comm, RBC::Comm *rcomm, 
-        bool use_MPI_collectives, bool split_MPI_comm) {
-    *rcomm = RBC::Comm(mpi_comm, use_MPI_collectives, split_MPI_comm,
-            true, false);
+        bool use_mpi_collectives, bool split_mpi_comm, bool use_comm_create) {
+    *rcomm = RBC::Comm(mpi_comm, use_mpi_collectives, split_mpi_comm,
+            use_comm_create);
     return 0;
 }
-    
+
+RBC::Comm RBC::Create_Comm_from_MPI(MPI_Comm mpi_comm,
+        bool use_mpi_collectives, bool split_mpi_comm, bool use_comm_create) {
+    return RBC::Comm(mpi_comm, use_mpi_collectives, split_mpi_comm,
+            use_comm_create);
+}
+
 int RBC::Comm_create(RBC::Comm const &comm, RBC::Comm *new_comm,
         int first, int last, int stride) {
-    if (comm.split_MPI_comm) {
+    if (comm.splitMPIComm()) {
         int rank;
         RBC::Comm_rank(comm, &rank);
-        int color = MPI_UNDEFINED;
-        if (rank >= first && rank <= last && (rank - first) % stride == 0) {
-            color = 1;
-        }
+        MPI_Group group, new_group;
+        MPI_Comm_group(comm.mpi_comm, &group);
+        int ranges[3] = {first, last, stride};
+        MPI_Group_range_incl(group, 1, &ranges, &new_group);
         MPI_Comm new_mpi_comm;
-        MPI_Comm_split(comm.mpi_comm, color, rank, &new_mpi_comm);
-
-        if (color == 1) {
-            *new_comm = RBC::Comm(new_mpi_comm, comm.use_MPI_collectives,
-                    comm.split_MPI_comm, true, true);
+        
+        MPI_Comm_create(comm.mpi_comm, new_group, &new_mpi_comm);
+        
+        if (new_mpi_comm != MPI_COMM_NULL) {
+            *new_comm = RBC::Comm(new_mpi_comm, comm);
         }
     } else {
         int rank;
@@ -86,16 +106,22 @@ int RBC::Comm_create(RBC::Comm const &comm, RBC::Comm *new_comm,
         int mpi_rank = comm.RangeRankToMpiRank(rank);
         RangeGroup range_group = comm.range_group.Split(first, last, stride);
         if (range_group.IsMpiRankIncluded(mpi_rank)) {
-            *new_comm = RBC::Comm(comm.mpi_comm, range_group,
-                    comm.use_MPI_collectives, comm.split_MPI_comm);
+            *new_comm = RBC::Comm(range_group, comm);
         }
     }
     return 0;
 } 
+ 
+RBC::Comm RBC::Comm_create(RBC::Comm const &comm,
+        int first, int last, int stride) {
+    RBC::Comm new_comm;
+    RBC::Comm_create(comm, &new_comm, first, last, stride);
+    return new_comm;    
+}
 
 int RBC::Comm_create_group(RBC::Comm const &comm, RBC::Comm *new_comm,
         int first, int last, int stride) {
-    if (comm.split_MPI_comm) {
+    if (comm.splitMPIComm()) {
         MPI_Group group, new_group;
         MPI_Comm_group(comm.mpi_comm, &group);
         int ranges[3] = {first, last, stride};
@@ -105,21 +131,19 @@ int RBC::Comm_create_group(RBC::Comm const &comm, RBC::Comm *new_comm,
         MPI_Comm_create_group(comm.mpi_comm, new_group, 0, &new_mpi_comm);
 #else
         MPI_Comm_create(comm.mpi_comm, new_group, &new_mpi_comm);
-#endif
-        
-        *new_comm = RBC::Comm(new_mpi_comm, comm.use_MPI_collectives,
-                comm.split_MPI_comm, true, true);
+#endif        
+        if (new_mpi_comm != MPI_COMM_NULL) {
+            *new_comm = RBC::Comm(new_mpi_comm, comm);
+        }
     } else {
-        RangeGroup range_group = comm.range_group.Split(first, last, stride);
-        *new_comm = RBC::Comm(comm.mpi_comm, range_group,
-                comm.use_MPI_collectives, comm.split_MPI_comm);
+        RBC::Comm_create(comm, new_comm, first, last, stride);
     }
     return 0;
 }
 
 int RBC::Split_Comm(Comm const &comm, int left_start, int left_end, int right_start, 
         int right_end, Comm* left_comm, Comm* right_comm) {
-    if (!comm.split_MPI_comm) {        
+    if (!comm.splitMPIComm()) {        
         int rank;
         RBC::Comm_rank(comm, &rank);
         if (rank >= left_start && rank <= left_end)
@@ -128,7 +152,7 @@ int RBC::Split_Comm(Comm const &comm, int left_start, int left_end, int right_st
             RBC::Comm_create(comm, right_comm, right_start, right_end);
     } else {
         //split MPI communicator
-        assert(comm.is_MPI_comm);
+        assert(comm.is_mpi_comm);
         MPI_Comm mpi_comm = comm.mpi_comm, mpi_left, mpi_right;
         int rank, size;
         MPI_Comm_rank(mpi_comm, &rank);
@@ -136,106 +160,107 @@ int RBC::Split_Comm(Comm const &comm, int left_start, int left_end, int right_st
         
         //create MPI communicators
         if (left_end < right_start) {
-#ifndef USE_COMM_CREATE
             //disjoint communicators
-            int color;
-            if (rank >= left_start && rank <= left_end)
-                color = 1;            
-            else if (rank >= right_start && rank <= right_end)
-                color = 2;
-            else
-                color = MPI_UNDEFINED;
-            
-            MPI_Comm new_comm;
-            MPI_Comm_split(comm.mpi_comm, color, rank, &new_comm);
-            
-            if (color == 1) {
-                mpi_left = new_comm;
-                mpi_right = MPI_COMM_NULL;
-            } else {
-                mpi_left = MPI_COMM_NULL;
-                mpi_right = new_comm;                
-            }                 
-#else
-            MPI_Group group, new_group = MPI_GROUP_EMPTY;
-            MPI_Comm_group(comm.mpi_comm, &group);
-            int ranges[2][3] = {{left_start, left_end, 1}, {right_start, right_end, 1}};
-            if (rank >= left_start && rank <= left_end)
-                MPI_Group_range_incl(group, 1, &ranges[0], &new_group);            
-            else if (rank >= right_start && rank <= right_end)
-                MPI_Group_range_incl(group, 1, &ranges[1], &new_group);  
-            
-            MPI_Comm new_mpi_comm;
+            if (comm.use_comm_create) {
+                MPI_Group group, new_group = MPI_GROUP_EMPTY;
+                MPI_Comm_group(comm.mpi_comm, &group);
+                int ranges[2][3] = {
+                    {left_start, left_end, 1},
+                    {right_start, right_end, 1}};
+                if (rank >= left_start && rank <= left_end)
+                    MPI_Group_range_incl(group, 1, &ranges[0], &new_group);
+                else if (rank >= right_start && rank <= right_end)
+                    MPI_Group_range_incl(group, 1, &ranges[1], &new_group);
+
+                MPI_Comm new_mpi_comm;
 #ifndef NO_IBCAST
-            MPI_Comm_create_group(comm.mpi_comm, new_group, 0, &new_mpi_comm);
+                MPI_Comm_create_group(comm.mpi_comm, new_group, 0, &new_mpi_comm);
 #else
-            MPI_Comm_create(comm.mpi_comm, new_group, &new_mpi_comm);
+                MPI_Comm_create(comm.mpi_comm, new_group, &new_mpi_comm);
 #endif
-            if (rank >= left_start && rank <= left_end) {
-                mpi_left = new_mpi_comm;
-                mpi_right = MPI_COMM_NULL;
+                if (rank >= left_start && rank <= left_end) {
+                    mpi_left = new_mpi_comm;
+                    mpi_right = MPI_COMM_NULL;
+                } else {
+                    mpi_left = MPI_COMM_NULL;
+                    mpi_right = new_mpi_comm;
+                }                
             } else {
-                mpi_left = MPI_COMM_NULL;
-                mpi_right = new_mpi_comm;                
-            }             
-#endif
+                int color;
+                if (rank >= left_start && rank <= left_end)
+                    color = 1;
+                else if (rank >= right_start && rank <= right_end)
+                    color = 2;
+                else
+                    color = MPI_UNDEFINED;
+
+                MPI_Comm new_comm;
+                MPI_Comm_split(comm.mpi_comm, color, rank, &new_comm);
+
+                if (color == 1) {
+                    mpi_left = new_comm;
+                    mpi_right = MPI_COMM_NULL;
+                } else {
+                    mpi_left = MPI_COMM_NULL;
+                    mpi_right = new_comm;
+                }
+            }
         } else {
             //overlapping communicators
-#ifndef USE_COMM_CREATE
-            int color1, color2;
-            if (rank >= left_start && rank <= left_end)
-                color1 = 1;
-            else {
-                color1 = MPI_UNDEFINED;
-            }
+            if (comm.use_comm_create) {
+                MPI_Group group, new_group_left = MPI_GROUP_EMPTY, new_group_right = MPI_GROUP_EMPTY;
+                MPI_Comm_group(comm.mpi_comm, &group);
+                int ranges[2][3] = {
+                    {left_start, left_end, 1},
+                    {right_start, right_end, 1}};
+                if (rank >= left_start && rank <= left_end)
+                    MPI_Group_range_incl(group, 1, &ranges[0], &new_group_left);
+                if (rank >= right_start && rank <= right_end)
+                    MPI_Group_range_incl(group, 1, &ranges[1], &new_group_right);
 
-            if (rank >= right_start && rank <= right_end)
-                color2 = 2;
-            else {
-                color2 = MPI_UNDEFINED;
-            }
-       
-            MPI_Comm_split(comm.mpi_comm, color1, rank, &mpi_left);
-            MPI_Comm_split(comm.mpi_comm, color2, rank, &mpi_right);
-#else
-            MPI_Group group, new_group_left = MPI_GROUP_EMPTY, new_group_right = MPI_GROUP_EMPTY;
-            MPI_Comm_group(comm.mpi_comm, &group);
-            int ranges[2][3] = {{left_start, left_end, 1}, {right_start, right_end, 1}};
-            if (rank >= left_start && rank <= left_end)
-                MPI_Group_range_incl(group, 1, &ranges[0], &new_group_left);            
-            if (rank >= right_start && rank <= right_end)
-                MPI_Group_range_incl(group, 1, &ranges[1], &new_group_right);  
-            
 #ifndef NO_IBCAST
-            if (rank >= left_start && rank <= left_end)
-                MPI_Comm_create_group(comm.mpi_comm, new_group_left, 0, &mpi_left);       
-            if (rank >= right_start && rank <= right_end)
-                MPI_Comm_create_group(comm.mpi_comm, new_group_right, 0, &mpi_right);
+                if (rank >= left_start && rank <= left_end)
+                    MPI_Comm_create_group(comm.mpi_comm, new_group_left, 0, &mpi_left);
+                if (rank >= right_start && rank <= right_end)
+                    MPI_Comm_create_group(comm.mpi_comm, new_group_right, 0, &mpi_right);
 #else
-            MPI_Comm_create(comm.mpi_comm, new_group_left, &mpi_left);
-            MPI_Comm_create(comm.mpi_comm, new_group_right, &mpi_right);
+                MPI_Comm_create(comm.mpi_comm, new_group_left, &mpi_left);
+                MPI_Comm_create(comm.mpi_comm, new_group_right, &mpi_right);
 #endif            
-#endif
+            } else {
+                int color1, color2;
+                if (rank >= left_start && rank <= left_end)
+                    color1 = 1;
+                else {
+                    color1 = MPI_UNDEFINED;
+                }
+
+                if (rank >= right_start && rank <= right_end)
+                    color2 = 2;
+                else {
+                    color2 = MPI_UNDEFINED;
+                }
+
+                MPI_Comm_split(comm.mpi_comm, color1, rank, &mpi_left);
+                MPI_Comm_split(comm.mpi_comm, color2, rank, &mpi_right);
+            }
         }
         
         if (rank >= left_start && rank <= left_end) {
             assert(mpi_left != MPI_COMM_NULL);
-            *left_comm = RBC::Comm(mpi_left,
-                comm.use_MPI_collectives, comm.split_MPI_comm, true, true);
+            *left_comm = RBC::Comm(mpi_left, comm);
         }
         if (rank >= right_start && rank <= right_end) {
             assert(mpi_right != MPI_COMM_NULL);
-            *right_comm = RBC::Comm(mpi_right,
-                comm.use_MPI_collectives, comm.split_MPI_comm, true, true);
+            *right_comm = RBC::Comm(mpi_right, comm);
         }
     }
     return 0;
 }
 
-int RBC::Comm_free(Comm const &comm) {
-    if (comm.is_MPI_comm && comm.free_MPI_comm) {
-        MPI_Comm mpi_comm = comm.mpi_comm;
-        return MPI_Comm_free(&mpi_comm);
+int RBC::Comm_free(Comm &comm) {
+    if (comm.is_mpi_comm && comm.free_mpi_comm) {
+        return MPI_Comm_free(&comm.mpi_comm);
     }
     return 0;
 }
@@ -253,7 +278,13 @@ int RBC::Comm::RangeRankToMpiRank(int range_rank) const {
 }
 
 bool RBC::Comm::useMPICollectives() const {
-    return use_MPI_collectives && is_MPI_comm;
+    return use_mpi_collectives && is_mpi_comm;
+}
+
+bool RBC::Comm::splitMPIComm() const {
+    if (split_mpi_comm)
+        assert(is_mpi_comm);
+    return split_mpi_comm;
 }
 
 bool RBC::Comm::includesMpiRank(int rank) const {
@@ -273,22 +304,21 @@ std::ostream& RBC::operator<<(std::ostream& os,
     return os;
 }
 
-RBC::Request::Request() : req_ptr(std::unique_ptr<R_Req>()) {
+RBC::Request::Request() {
 }
 
-RBC::Request::Request(R_Req *req) : req_ptr(req) {
+void RBC::Request::set(const std::shared_ptr<_internal::RequestSuperclass>& req) {   
+    req_ptr = req;
 }
 
-RBC::R_Req& RBC::Request::operator*() {
-    return *req_ptr;
+RBC::Request& RBC::Request::operator=(const Request& req) {
+    this->set(req.req_ptr);
+    return *this;
 }
 
-RBC::R_Req* RBC::Request::operator->() {
-    return req_ptr.get();
-}
-
-void RBC::Request::operator=(std::unique_ptr<R_Req> req) {   
-    req_ptr = std::move(req);
+int RBC::Request::test(int* flag, MPI_Status* status) {
+    *flag = 0;
+    return req_ptr->test(flag, status);
 }
 
 int RBC::Comm_rank(RBC::Comm const &comm, int *rank) {
@@ -328,8 +358,7 @@ int RBC::Probe(int source, int tag, RBC::Comm const &comm, MPI_Status *status) {
 }
 
 int RBC::Test(RBC::Request *request, int *flag, MPI_Status *status) {
-    *flag = 0;
-    return (*request)->test(flag, status);
+    return request->test(flag, status);
 }
 
 int RBC::Testall(int count, RBC::Request *array_of_requests, int* flag,
