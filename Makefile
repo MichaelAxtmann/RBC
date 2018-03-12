@@ -2,9 +2,9 @@ CXX = mpic++ -march=native -std=c++11 -O3 -DNDEBUG -g -Wall
 
 .PHONY: rebuild all clean
 	
-TARGETDIR = build
+TARGETDIR = build$(SUBDIR)
 SRCDIR = .
-LIBDIR = lib
+LIBDIR = lib${SUBDIR}
 
 SRCDIR_RANGE = $(SRCDIR)/RangeBasedComm
 TARGETDIR_RANGE = $(TARGETDIR)/RBC
