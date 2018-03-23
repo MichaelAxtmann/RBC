@@ -508,6 +508,19 @@ namespace RBC {
             int count, MPI_Datatype datatype, MPI_Op op, RBC::Comm const &comm);
     
     /**
+     * Non-blocking send with MPI_Request
+     * @param sendbuf Starting address of send buffer
+     * @param count Number of elements in send buffer
+     * @param datatype MPI datatype of the elements
+     * @param dest Destination rank
+     * @param tag Tag to differentiate between multiple calls
+     * @param comm The Range comm on which the operation is performed
+     * @param request MPI_Request that will be returned
+     */
+    int Isend(const void *sendbuf, int count, MPI_Datatype datatype,
+            int dest, int tag, RBC::Comm const &comm, MPI_Request *request);
+
+    /**
      * Non-blocking send
      * @param sendbuf Starting address of send buffer
      * @param count Number of elements in send buffer
@@ -556,6 +569,19 @@ namespace RBC {
      */
     int Ssend(const void *sendbuf, int count, MPI_Datatype datatype,
             int dest, int tag, RBC::Comm const &comm);
+    
+    /**
+     * Non-blocking receive with MPI_Request
+     * @param sendbuf Starting address of receive buffer
+     * @param count Number of elements to be received
+     * @param datatype MPI datatype of the elements
+     * @param dest Source rank, can be MPI_ANY_SOURCE
+     * @param tag Tag to differentiate between multiple calls
+     * @param comm The Range comm on which the operation is performed
+     * @param request MPI_Request that will be returned
+     */
+    int Irecv(void *buffer, int count, MPI_Datatype datatype, int source,
+            int tag, RBC::Comm const &comm, MPI_Request *request);
     
     /**
      * Non-blocking receive

@@ -43,6 +43,12 @@ namespace RBC {
         int recv_size = count * datatype_size;
         int height = std::ceil(std::log2(size));
 
+        if (size == 1) {
+            std::memcpy(recvbuf_scan, sendbuf, recv_size);
+            std::memcpy(recvbuf_bcast, sendbuf, recv_size);
+            return 0;
+        }
+
         int up_height = 0;
         if (rank == (size - 1)) {
             up_height = height;
@@ -67,15 +73,6 @@ namespace RBC {
             down_height = up_height + 1;
 
         std::memcpy(scan_buf, sendbuf, recv_size);
-        if (size == 1) {
-            std::memcpy(recvbuf_scan, sendbuf, recv_size);
-            std::memcpy(recvbuf_bcast, sendbuf, recv_size);
-            // free buffer
-            delete[] recvbuf_arr;
-            delete[] tmp_buf;
-            delete[] scan_buf;
-            return 0;
-        }
 
         //upsweep phase
         std::vector<int> target_ranks;

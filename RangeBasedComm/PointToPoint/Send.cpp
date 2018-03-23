@@ -66,6 +66,12 @@ namespace RBC {
     }
 
     int Isend(const void *sendbuf, int count, MPI_Datatype datatype, int dest,
+            int tag, RBC::Comm const &comm, MPI_Request *request) {
+        return MPI_Isend(const_cast <void*>(sendbuf), count, datatype,
+                         comm.RangeRankToMpiRank(dest), tag, comm.mpi_comm, request);
+    }
+
+    int Isend(const void *sendbuf, int count, MPI_Datatype datatype, int dest,
             int tag, Comm const &comm, Request *request) {
         request->set(std::make_shared<_internal::IsendReq>(sendbuf, count,
                 datatype, dest, tag, comm));

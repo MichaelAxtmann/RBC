@@ -35,10 +35,10 @@ public:
         long long global_samples, local_samples;
         
         if (ival.evenly_distributed)
-            getLocalSamples_calculate(ival, global_samples, local_samples, comp, 
+            getLocalSamples_calculate(ival, global_samples, local_samples,
                     generator);
         else
-            getLocalSamples_communicate(ival, global_samples, local_samples, comp,
+            getLocalSamples_communicate(ival, global_samples, local_samples,
                     generator);
                 
         if (global_samples == -1) {
@@ -110,9 +110,9 @@ public:
 
         //Randomly pick samples from local data
         getLocalSamples_calculate(ival_left, global_samples_left,
-                local_samples_left, comp, generator);
+                local_samples_left, generator);
         getLocalSamples_calculate(ival_right, global_samples_right,
-                local_samples_right, comp, generator);
+                local_samples_right, generator);
 
         std::vector<TbSplitter < T>> samples_left, samples_right;
         pickLocalSamples(ival_left, local_samples_left, samples_left, comp,
@@ -170,10 +170,8 @@ private:
     /*
      * Determine how much samples need to be send and pick them randomly
      */
-    template<class Compare>
     static void getLocalSamples_calculate(QSInterval_SQS<T> const &ival, 
-            long long &total_samples, long long &local_samples,
-            Compare comp, std::mt19937_64 &generator) {
+            long long &total_samples, long long &local_samples, std::mt19937_64 &generator) {
         total_samples = getSampleCount(ival.number_of_PEs,
                 ival.getIndexFromRank(ival.number_of_PEs), ival.min_samples,
 		ival.add_pivot);        
@@ -234,10 +232,8 @@ private:
     /*
      * Determine how much samples need to be send and pick them randomly
      */
-    template<class Compare>
     static void getLocalSamples_communicate(QSInterval_SQS<T> const &ival, 
-            long long &total_samples, long long &local_samples,
-            Compare comp, std::mt19937_64 &generator) {
+            long long &total_samples, long long &local_samples, std::mt19937_64 &generator) {
         DistrToLocSampleCount(ival.local_elements, total_samples,
                 local_samples, generator, ival.comm, ival.min_samples, ival.add_pivot);
     }
