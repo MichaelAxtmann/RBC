@@ -168,7 +168,10 @@ public:
 private:
 
     /*
-     * Determine how much samples need to be send and pick them randomly
+     * Determine how much samples need to be send and pick them randomly.
+     * The input elements have to be evenly distributed, meaning each PE has
+     * global_count / size elements and the remaining x = global_count % size elements
+     * are distributed to the PEs [0, x-1].
      */
     static void getLocalSamples_calculate(QSInterval_SQS<T> const &ival, 
             long long &total_samples, long long &local_samples, std::mt19937_64 &generator) {
@@ -190,10 +193,7 @@ private:
                 //right subtree is empty
             } else {
                 int left_size = std::pow(2, height - 1);
-                int right_size = last_PE - first_PE + 1 - left_size;
                 assert(left_size > 0);
-                assert(right_size > 0);
-                assert(left_size + right_size == last_PE - first_PE + 1);
                 long long left_elements = ival.getIndexFromRank(first_PE + left_size)
                     - ival.getIndexFromRank(first_PE);
                 long long right_elements = ival.getIndexFromRank(last_PE + 1)

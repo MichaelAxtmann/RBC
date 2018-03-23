@@ -66,9 +66,9 @@ private:
         RBC::Isend(data_ptr + ival.local_start, ival.local_elements, ival.mpi_type,
                 partner, Constants::TWO_PE, ival.comm, &requests[0]);
         
-        int recv_elements = 0, flag = 0;
+        int recv_elements = -1, flag = 0;
         MPI_Status status;
-        while (recv_elements == 0) {
+        while (recv_elements == -1) {
             RBC::Iprobe(partner, Constants::TWO_PE, ival.comm, &flag, &status);
             if (flag) {
                 MPI_Get_count(&status, ival.mpi_type, &recv_elements);
@@ -142,9 +142,9 @@ private:
         RBC::Isend(data_ptr_2 + ival_2.local_start, ival_2.local_elements, ival_2.mpi_type,
                 partner_2, Constants::TWO_PE, ival_2.comm, &requests[2]);
 
-        int recv_elements_1 = 0, flag_1 = 0, recv_elements_2 = 0, flag_2 = 0;
+        int recv_elements_1 = -1, flag_1 = 0, recv_elements_2 = -1, flag_2 = 0;
         MPI_Status status_1, status_2;
-        while (recv_elements_1 == 0 || recv_elements_2 == 0) {
+        while (recv_elements_1 == -1 || recv_elements_2 == -1) {
             RBC::Iprobe(partner_1, Constants::TWO_PE, ival_1.comm, &flag_1, &status_1);
             if (flag_1)
                 MPI_Get_count(&status_1, ival_1.mpi_type, &recv_elements_1);
@@ -173,7 +173,7 @@ private:
         
         RBC::Waitall(4, &requests[0], MPI_STATUSES_IGNORE);
         
-        //partiotion data and sort one partition
+        //partition data and sort one partition
         partitionAndSort(ival_1, comp, buffer_1, recv_elements_1);
         partitionAndSort(ival_2, comp, buffer_2, recv_elements_2);
         
