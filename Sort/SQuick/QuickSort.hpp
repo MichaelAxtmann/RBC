@@ -671,7 +671,7 @@ private:
         int right_start = left_size;
         if (shizophrenic)
             right_start--;
-        int right_end = size - 1; //std::min((long long) size - 1, ival.global_elements - 1);
+        int right_end = std::min(static_cast<long long>(size - 1), ival.global_elements - 1);
         right_end = std::max(right_start, right_end);
         RBC::Split_Comm(ival.comm, 0, left_end, right_start, right_end,
                 left, right);
