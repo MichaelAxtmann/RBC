@@ -18,7 +18,9 @@ $(TARGETDIR)/example : $(EXAMPLE)
 	
 # Create libraries
 RANGE_OBJ = $(addprefix $(TARGETDIR_RANGE)/,RBC.o Allgather.o Allreduce.o Barrier.o \
-	Bcast.o Exscan.o Gather.o Recv.o Reduce.o Scan.o ScanAndBcast.o Send.o Sendrecv.o) 
+	AllreduceTwotree.o ScanTwotree.o ScanAndBcastTwotree.o Twotree.o Bcast.o \
+	Exscan.o Gather.o Recv.o Reduce.o Scan.o ScanAndBcast.o Send.o \
+	Sendrecv.o) 
 $(LIBDIR)/lib_rbc.a : $(RANGE_OBJ)
 	ar rcs $@ $(RANGE_OBJ)
 

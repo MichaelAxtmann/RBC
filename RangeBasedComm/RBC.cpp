@@ -11,6 +11,7 @@
 #include <memory>
 #include <mpi.h>
 #include <iostream>
+#include <vector>
 
 #include "RBC.hpp"
 #include "RangeGroup.hpp"
@@ -366,12 +367,14 @@ int RBC::Testall(int count, RBC::Request *array_of_requests, int* flag,
     *flag = 1;
     for (int i = 0; i < count; i++) {
         int temp_flag;
-        if (array_of_statuses == MPI_STATUSES_IGNORE)
+        if (array_of_statuses == MPI_STATUSES_IGNORE) {
             Test(&array_of_requests[i], &temp_flag, MPI_STATUS_IGNORE);
-        else
+        } else {
             Test(&array_of_requests[i], &temp_flag, &array_of_statuses[i]);
-        if (temp_flag == 0)
+        }
+        if (temp_flag == 0) {
             *flag = 0;
+        }
     }
     return 0;
 }
@@ -385,10 +388,25 @@ int RBC::Wait(RBC::Request *request, MPI_Status *status) {
 }
 
 int RBC::Waitall(int count, RBC::Request array_of_requests[],
-        MPI_Status array_of_statuses[]) {
-    int flag = 0;
-    while (flag == 0) {
-        Testall(count, array_of_requests, &flag, array_of_statuses);
+                 MPI_Status array_of_statuses[]) {
+    // We are not allowed to call Testall until success
+    // as Testall calls Test on requests which are already successful.
+    int pending_requests = count;
+    std::vector<bool> succs(count, false);
+    while (pending_requests > 0) {
+        for (int i = 0; i < count; i++) {
+            if (succs[i]) continue;
+            int succ;
+            if (array_of_statuses == MPI_STATUSES_IGNORE) {
+                Test(&array_of_requests[i], &succ, MPI_STATUS_IGNORE);
+            } else {
+                Test(&array_of_requests[i], &succ, &array_of_statuses[i]);
+            }
+            if (succ == 1) {
+                --pending_requests;
+                succs[i] = true;
+            }
+        }
     }
     return 0;
 }
