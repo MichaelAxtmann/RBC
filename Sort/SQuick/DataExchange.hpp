@@ -107,9 +107,6 @@ public:
                             data_ptr_right + ival_right.local_start + recv_small_r + recv_count_large_r,
                             recv_count_large_r, recv_large_r, Constants::EXCHANGE_LARGE, ival_right.mpi_type);
             }
-
-            //test all send and receive operations
-            requests.testAll();
         }
         requests.waitAll();
     }  
