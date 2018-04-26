@@ -15,7 +15,12 @@ namespace RBC {
 
     int Recv(void* buf, int count, MPI_Datatype datatype, int source, int tag,
             Comm const &comm, MPI_Status *status) {
-        return MPI_Recv(buf, count, datatype, comm.RangeRankToMpiRank(source), tag, comm.mpi_comm, status);
+        if (source == MPI_ANY_SOURCE) {
+            return MPI_Recv(buf, count, datatype, source, tag, comm.mpi_comm, status);
+        } else {
+            return MPI_Recv(buf, count, datatype, comm.RangeRankToMpiRank(source),
+                            tag, comm.mpi_comm, status);
+        }
     }
 
     namespace _internal {
@@ -35,8 +40,18 @@ namespace RBC {
             bool receiving;
             MPI_Request request;
         };
-    }
+    } // end namespace _internal
     
+    int Irecv(void* buffer, int count, MPI_Datatype datatype, int source, int tag,
+                   RBC::Comm const &comm, MPI_Request *request) {    
+        if (source == MPI_ANY_SOURCE) {
+            return MPI_Irecv(buffer, count, datatype, source, tag, comm.mpi_comm, request);
+        } else {
+            return MPI_Irecv(buffer, count, datatype, comm.RangeRankToMpiRank(source),
+                             tag, comm.mpi_comm, request);
+        }
+    }
+
     int Irecv(void* buffer, int count, MPI_Datatype datatype, int source, int tag,
         Comm const &comm, Request *request) {    
     request->set(std::make_shared<_internal::IrecvReq>(buffer, count, 
@@ -62,20 +77,14 @@ int RBC::_internal::IrecvReq::test(int *flag, MPI_Status *status) {
     if (receiving) {
         return MPI_Test(&request, flag, status);
     } else {
-        if (source != MPI_ANY_SOURCE) {
-            MPI_Irecv(buffer, count, datatype, comm.RangeRankToMpiRank(source),
-                    tag, comm.mpi_comm,
+        assert(source == MPI_ANY_SOURCE);
+        int ready;
+        MPI_Status stat;
+        RBC::Iprobe(MPI_ANY_SOURCE, tag, comm, &ready, &stat);
+        if (ready) {
+            MPI_Irecv(buffer, count, datatype, stat.MPI_SOURCE, tag, comm.mpi_comm,
                       &request);
             receiving = true;
-        } else {
-            int ready;
-            MPI_Status stat;
-            RBC::Iprobe(MPI_ANY_SOURCE, tag, comm, &ready, &stat);
-            if (ready) {
-                MPI_Irecv(buffer, count, datatype, stat.MPI_SOURCE, tag, comm.mpi_comm,
-                          &request);
-                receiving = true;
-            }
         }
     }
     return 0;

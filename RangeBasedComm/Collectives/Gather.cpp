@@ -130,7 +130,7 @@ namespace RBC {
         }
 #endif
         std::function<void (void*, void*, void*) > op =
-                [](void* a, void* b, void* c) {
+                [](void*, void*, void*) {
                     return;
                 };
         blockingGather(sendbuf, sendcount,
@@ -149,7 +149,7 @@ namespace RBC {
         }
 #endif
         std::function<void (void*, void*, void*) > op =
-                [](void* a, void* b, void* c) {
+                [](void*, void*, void*) {
                     return;
                 };
         blockingGather(sendbuf, sendcount,
@@ -202,7 +202,7 @@ namespace RBC {
             void *recvbuf, int recvcount, MPI_Datatype recvtype,
             int root, Comm const &comm, Request* request, int tag) {
         std::function<void (void*, void*, void*) > op =
-                [](void* a, void* b, void* c) {
+                [](void*, void*, void*) {
                     return;
                 };
         request->set(std::make_shared<_internal::IgatherReq>(sendbuf, sendcount,
@@ -216,7 +216,7 @@ namespace RBC {
             MPI_Datatype recvtype, int root, Comm const &comm,
             Request* request, int tag) {
         std::function<void (void*, void*, void*) > op =
-                [](void* a, void* b, void* c) {
+                [](void*, void*, void*) {
                     return;
                 };
         request->set(std::make_shared<_internal::IgatherReq>(sendbuf, sendcount,

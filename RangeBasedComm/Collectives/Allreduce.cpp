@@ -21,15 +21,9 @@ namespace RBC {
             return MPI_Allreduce(const_cast<void*> (sendbuf), recvbuf, count, datatype, op, comm.mpi_comm);
         }
 
-        MPI_Aint lb, type_size;
-        MPI_Type_get_extent(datatype, &lb, &type_size);
-        int datatype_size = static_cast<int> (type_size);
-        char* scan_buf = new char[count * datatype_size];
-
-        ScanAndBcast(sendbuf, scan_buf, recvbuf, count, datatype, op,
-                comm);
-
-        delete[] scan_buf;
+        int root = 0;
+        RBC::Reduce(sendbuf, recvbuf, count, datatype, op, root, comm);
+        RBC::Bcast(recvbuf, count, datatype, root, comm);
         return 0;
     }
 
@@ -45,17 +39,16 @@ namespace RBC {
             ~IallreduceReq();
             int test(int *flag, MPI_Status *status);
         private:
+            bool first_round;
+            Request reduce_request;
+            Request bcast_request;
             const void *sendbuf;
             void *recvbuf;
-            int count, tag, rank, size, new_rank, height, own_height,
-            datatype_size, recv_size, receives;
+            int count, tag;
             MPI_Datatype datatype;
             MPI_Op op;
             Comm comm;
-            bool send, completed, mpi_collective;
-            char *recvbuf_arr, *reduce_buf, *scan_buf;
-            Request request;
-            std::vector<Request> recv_requests;
+            bool mpi_collective;
             MPI_Request mpi_req;
         };
     }
@@ -69,11 +62,16 @@ namespace RBC {
 }
 
 RBC::_internal::IallreduceReq::IallreduceReq(const void* sendbuf, void* recvbuf, int count,
-        MPI_Datatype datatype, int tag, MPI_Op op, RBC::Comm const &comm) :
-sendbuf(sendbuf), recvbuf(recvbuf), count(count), tag(tag),
-datatype(datatype), op(op), comm(comm), send(false), completed(false),
-mpi_collective(false), recvbuf_arr(nullptr), reduce_buf(nullptr),
-scan_buf(nullptr) {
+        MPI_Datatype datatype, int tag, MPI_Op op, RBC::Comm const &comm)
+    : first_round(true)
+    , sendbuf(sendbuf)
+    , recvbuf(recvbuf)
+    , count(count)
+    , tag(tag)
+    , datatype(datatype)
+    , op(op)
+    , comm(comm)
+    , mpi_collective(false) {
 #ifndef NO_IBCAST
     if (comm.useMPICollectives()) {
         MPI_Iallreduce(const_cast<void*> (sendbuf), recvbuf, count, datatype, op, comm.mpi_comm,
@@ -83,25 +81,25 @@ scan_buf(nullptr) {
     }
 #endif
 
-    MPI_Aint lb, type_size;
-    MPI_Type_get_extent(datatype, &lb, &type_size);
-    datatype_size = static_cast<int> (type_size);
-    scan_buf = new char[count * datatype_size];
-
-    RBC::IscanAndBcast(sendbuf, scan_buf, recvbuf, count, datatype, op,
-            comm, &request, tag);
+    RBC::Ireduce(sendbuf, recvbuf, count, datatype, op, 0, comm, &reduce_request);
 }
 
-RBC::_internal::IallreduceReq::~IallreduceReq() {
-    if (scan_buf != nullptr)
-        delete[] scan_buf;
-}
+RBC::_internal::IallreduceReq::~IallreduceReq() {}
 
 int RBC::_internal::IallreduceReq::test(int* flag, MPI_Status* status) {
     if (mpi_collective)
         return MPI_Test(&mpi_req, flag, status);
 
-    RBC::Test(&request, flag, status);
+    if (first_round) {
+        RBC::Test(&reduce_request, flag, status);
+        if (*flag) {
+            RBC::Ibcast(recvbuf, count, datatype, 0, comm, &bcast_request);
+            first_round = false;
+        }
+        *flag = 0;
+    } else {
+        RBC::Test(&bcast_request, flag, status);
+    }
 
     return 0;
 }

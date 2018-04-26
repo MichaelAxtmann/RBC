@@ -130,15 +130,25 @@ namespace RBC {
     
     namespace Tag_Const {
         const int 
-            ALLGATHER       = 1000070,
-            ALLREDUCE       = 1000080, 
-            BARRIER         = 1000100,
-            BCAST           = 1000105,
-            EXSCAN          = 1000110,
-            GATHER          = 1000115,
-            REDUCE          = 1000120,
-            SCAN            = 1000125,
-            SCANANDBCAST    = 1000130;
+            ALLGATHER                = 1000070,
+            ALLREDUCE                = 1000080, 
+            ALLREDUCETWOTREE         = 1000081, 
+            BARRIER                  = 1000100,
+            BCAST                    = 1000105,
+            EXSCAN                   = 1000110,
+            GATHER                   = 1000115,
+            REDUCE                   = 1000120,
+            SCAN                     = 1000125,
+            SCANTWOTREE              = 1000126,
+            SCANANDBCAST             = 1000130,
+            SCANANDBCASTSCANTWOTREE  = 1000131,
+            SCANANDBCASTBCASTTWOTREE = 1000132;
+    };
+
+    namespace Network_Const {
+        const double
+            TB = 5.63185e-10,
+            TS = 3.54439e-06;
     };
     
     /**
@@ -425,6 +435,18 @@ namespace RBC {
             MPI_Op op, RBC::Comm const &comm);
     
     /**
+     * Blocking Allreduce implemented with the two-tree algorithm
+     * @param sendbuf Starting address of send buffer
+     * @param recvbuf Starting address of receive buffer
+     * @param count Number of elements in send buffer
+     * @param datatype MPI datatype of the elements
+     * @param op Operation used to reduce two elements
+     * @param comm The Range comm on which the operation is performed
+     */
+    int AllreduceTwotree(const void *sendbuf, void *recvbuf, int count, MPI_Datatype datatype,
+            MPI_Op op, RBC::Comm const &comm);
+    
+    /**
      * Non-blocking scan (partial reductions)
      * @param sendbuf Starting address of send buffer
      * @param recvbuf Starting address of receive buffer
@@ -450,7 +472,19 @@ namespace RBC {
      */
     int Scan(const void *sendbuf, void *recvbuf, int count, MPI_Datatype datatype,
             MPI_Op op, RBC::Comm const &comm);
-        
+    
+    /**
+     * Blocking scan (partial reductions) with the two-tree algorithm
+     * @param sendbuf Starting address of send buffer
+     * @param recvbuf Starting address of receive buffer
+     * @param count Number of elements in send buffer
+     * @param datatype MPI datatype of the elements
+     * @param op Operation used to reduce two elements
+     * @param comm The Range comm on which the operation is performed
+     */
+     int ScanTwotree(const void *sendbuf, void *recvbuf, int local_el_cnt, MPI_Datatype datatype,
+                     MPI_Op op, RBC::Comm const &comm);
+
     /**
      * Non-blocking exclusive scan (partial reductions)
      * @param sendbuf Starting address of send buffer
@@ -508,6 +542,33 @@ namespace RBC {
             int count, MPI_Datatype datatype, MPI_Op op, RBC::Comm const &comm);
     
     /**
+     * Non-blocking scan (partial reductions) and broadcast of the reduction over all elements
+     * implemented with the two-tree algorithm
+     * @param sendbuf Starting address of send buffer
+     * @param recvbuf_scan Starting address of receive buffer for the scan value
+     * @param recvbuf_bcast Starting address of receive buffer for the broadcast value
+     * @param count Number of elements in send buffer
+     * @param datatype MPI datatype of the elements
+     * @param op Operation used to reduce two elements
+     * @param comm The Range comm on which the operation is performed
+     */
+    int ScanAndBcastTwotree(const void *sendbuf, void *recvbuf_scan, void *recvbuf_bcast,
+            int count, MPI_Datatype datatype, MPI_Op op, RBC::Comm const &comm);
+    
+    /**
+     * Non-blocking send with MPI_Request
+     * @param sendbuf Starting address of send buffer
+     * @param count Number of elements in send buffer
+     * @param datatype MPI datatype of the elements
+     * @param dest Destination rank
+     * @param tag Tag to differentiate between multiple calls
+     * @param comm The Range comm on which the operation is performed
+     * @param request MPI_Request that will be returned
+     */
+    int Isend(const void *sendbuf, int count, MPI_Datatype datatype,
+            int dest, int tag, RBC::Comm const &comm, MPI_Request *request);
+
+    /**
      * Non-blocking send
      * @param sendbuf Starting address of send buffer
      * @param count Number of elements in send buffer
@@ -556,6 +617,19 @@ namespace RBC {
      */
     int Ssend(const void *sendbuf, int count, MPI_Datatype datatype,
             int dest, int tag, RBC::Comm const &comm);
+    
+    /**
+     * Non-blocking receive with MPI_Request
+     * @param sendbuf Starting address of receive buffer
+     * @param count Number of elements to be received
+     * @param datatype MPI datatype of the elements
+     * @param dest Source rank, can be MPI_ANY_SOURCE
+     * @param tag Tag to differentiate between multiple calls
+     * @param comm The Range comm on which the operation is performed
+     * @param request MPI_Request that will be returned
+     */
+    int Irecv(void *buffer, int count, MPI_Datatype datatype, int source,
+            int tag, RBC::Comm const &comm, MPI_Request *request);
     
     /**
      * Non-blocking receive

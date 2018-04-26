@@ -35,15 +35,14 @@ public:
         copyDataToBuffer(ival);
 
         //calculate how much data need to be received
-        getRecvCount(ival, recv_small, recv_large,
-                recv_count_small, recv_count_large);
+        getRecvCount(ival, recv_small, recv_large);
                 
         long long recv_elements = recv_small + recv_large;
         assert(ival.getLocalElements() == recv_elements);
         if (!ival.evenly_distributed)
             ival.data->resize(recv_elements);
         
-        sendData(ival, requests, recv_small, recv_large,
+        sendData(ival, requests, recv_small,
                 recv_count_small, recv_count_large);
         
         T *data_ptr = ival.data->data();
@@ -76,13 +75,11 @@ public:
         copyDataToBuffer(ival_right);
         
         //calculate how much data need to be send and received, then start non-blocking sends
-        getRecvCount(ival_left, recv_small_l, recv_large_l,
+        getRecvCount(ival_left, recv_small_l, recv_large_l);
+        getRecvCount(ival_right, recv_small_r, recv_large_r);
+        sendData(ival_left, requests, recv_small_l,
                 recv_count_small_l, recv_count_large_l);
-        getRecvCount(ival_right, recv_small_r, recv_large_r,
-                recv_count_small_r, recv_count_large_r);
-        sendData(ival_left, requests, recv_small_l, recv_large_l,
-                recv_count_small_l, recv_count_large_l);
-        sendData(ival_right, requests, recv_small_r, recv_large_r,
+        sendData(ival_right, requests, recv_small_r,
                 recv_count_small_r, recv_count_large_r);
 
         T *data_ptr_left = ival_left.data->data();
@@ -123,8 +120,7 @@ private:
     /*
      * Calculate how much small and large data need to be received
      */
-    static void getRecvCount(QSInterval_SQS<T> &ival, long long &recv_small, long long &recv_large,
-            long long &recv_count_small, long long &recv_count_large) {
+    static void getRecvCount(QSInterval_SQS<T> &ival, long long &recv_small, long long &recv_large) {
         int small_end_PE = ival.getRankFromIndex(ival.missing_first_PE + ival.global_small_elements - 1);
         int large_start_PE = ival.getRankFromIndex(ival.missing_first_PE + ival.global_small_elements);
         int local_elements = ival.getLocalElements();
@@ -146,8 +142,8 @@ private:
      * Calculate how much data need to be send then start non-blocking sends
      */
     static void sendData(QSInterval_SQS<T> &ival,
-            RequestVector &requests, long long &recv_small, 
-            long long &recv_large, long long &recv_count_small, long long &recv_count_large) {
+            RequestVector &requests, long long &recv_small,
+            long long &recv_count_small, long long &recv_count_large) {
         long long small_start = ival.local_start;
         long long large_start = ival.local_start + ival.local_small_elements;
         long long large_end = ival.local_end;

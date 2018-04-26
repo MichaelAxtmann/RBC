@@ -42,7 +42,7 @@ namespace RBC {
             int test(int *flag, MPI_Status *status);
 
         private:
-            MPI_Request *requests;
+            MPI_Request requests[2];
         };
     }
 
@@ -65,13 +65,12 @@ RBC::_internal::IsendrecvReq::IsendrecvReq(void *sendbuf,
         int source, int recvtag,
         RBC::Comm const &comm) {
     void* sendbuf_ = const_cast<void*> (sendbuf);
-    requests = new MPI_Request[2];
     MPI_Isend(sendbuf_, sendcount, sendtype, comm.RangeRankToMpiRank(dest),
             sendtag, comm.mpi_comm, &requests[0]);
     MPI_Irecv(recvbuf, recvcount, recvtype, comm.RangeRankToMpiRank(source),
             recvtag, comm.mpi_comm, &requests[1]);
 };
 
-int RBC::_internal::IsendrecvReq::test(int *flag, MPI_Status *status) {
+int RBC::_internal::IsendrecvReq::test(int *flag, MPI_Status *) {
     return MPI_Testall(2, requests, flag, MPI_STATUSES_IGNORE);
 };

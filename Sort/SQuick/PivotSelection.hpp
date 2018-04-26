@@ -35,10 +35,10 @@ public:
         long long global_samples, local_samples;
         
         if (ival.evenly_distributed)
-            getLocalSamples_calculate(ival, global_samples, local_samples, comp, 
+            getLocalSamples_calculate(ival, global_samples, local_samples,
                     generator);
         else
-            getLocalSamples_communicate(ival, global_samples, local_samples, comp,
+            getLocalSamples_communicate(ival, global_samples, local_samples,
                     generator);
                 
         if (global_samples == -1) {
@@ -110,9 +110,9 @@ public:
 
         //Randomly pick samples from local data
         getLocalSamples_calculate(ival_left, global_samples_left,
-                local_samples_left, comp, generator);
+                local_samples_left, generator);
         getLocalSamples_calculate(ival_right, global_samples_right,
-                local_samples_right, comp, generator);
+                local_samples_right, generator);
 
         std::vector<TbSplitter < T>> samples_left, samples_right;
         pickLocalSamples(ival_left, local_samples_left, samples_left, comp,
@@ -168,12 +168,13 @@ public:
 private:
 
     /*
-     * Determine how much samples need to be send and pick them randomly
+     * Determine how much samples need to be send and pick them randomly.
+     * The input elements have to be evenly distributed, meaning each PE has
+     * global_count / size elements and the remaining x = global_count % size elements
+     * are distributed to the PEs [0, x-1].
      */
-    template<class Compare>
     static void getLocalSamples_calculate(QSInterval_SQS<T> const &ival, 
-            long long &total_samples, long long &local_samples,
-            Compare comp, std::mt19937_64 &generator) {
+            long long &total_samples, long long &local_samples, std::mt19937_64 &generator) {
         total_samples = getSampleCount(ival.number_of_PEs,
                 ival.getIndexFromRank(ival.number_of_PEs), ival.min_samples,
 		ival.add_pivot);        
@@ -192,10 +193,7 @@ private:
                 //right subtree is empty
             } else {
                 int left_size = std::pow(2, height - 1);
-                int right_size = last_PE - first_PE + 1 - left_size;
                 assert(left_size > 0);
-                assert(right_size > 0);
-                assert(left_size + right_size == last_PE - first_PE + 1);
                 long long left_elements = ival.getIndexFromRank(first_PE + left_size)
                     - ival.getIndexFromRank(first_PE);
                 long long right_elements = ival.getIndexFromRank(last_PE + 1)
@@ -234,10 +232,8 @@ private:
     /*
      * Determine how much samples need to be send and pick them randomly
      */
-    template<class Compare>
     static void getLocalSamples_communicate(QSInterval_SQS<T> const &ival, 
-            long long &total_samples, long long &local_samples,
-            Compare comp, std::mt19937_64 &generator) {
+            long long &total_samples, long long &local_samples, std::mt19937_64 &generator) {
         DistrToLocSampleCount(ival.local_elements, total_samples,
                 local_samples, generator, ival.comm, ival.min_samples, ival.add_pivot);
     }

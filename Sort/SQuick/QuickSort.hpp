@@ -36,6 +36,18 @@ template<typename T>
 class QuickSort {
 public:
 
+    /**
+     * Constructor
+     * @param seed Seed for RNG, has to be the same for all PEs
+     * @param min_samples Minimal number of samples for the pivot selection
+     * @param barriers Use barriers to measure the running time of the algorithm phases 
+     * @param split_MPI_comm If true, split communicators using MPI_Comm_create/MPI_Comm_split
+     *      else use the RBC split operations
+     * @param use_MPI_collectives If true, use the collective operations provided by MPI whenever possible,
+     *      else always use the collective operations of RBC
+     * @param add_pivot If true, use k1+k2+k3 as the number of samples,
+     *      else use max(k1,k2,k3) 
+     */
     QuickSort(int seed, long long min_samples = 64, bool barriers = false, bool split_MPI_comm = false,
             bool use_MPI_collectives = false, bool add_pivot = false)
     : seed(seed), barriers(barriers),
@@ -46,14 +58,24 @@ public:
 
     ~QuickSort() {
     }
-   
-    /*
-     * Sorts the data
+       
+    /**
+     * Sorts the input data
+     * @param mpi_comm MPI commuicator (all ranks have to call the function)
+     * @param data_vec Vector that contains the input data
+     * @param global_elements The total number of elements on all PEs, set to -1 if unknown
      */
     void sort(MPI_Comm mpi_comm, std::vector<T> &data_vec, long long global_elements = -1) {
         sort(mpi_comm, data_vec, global_elements, std::less<T>());
     }
     
+    /**
+     * Sorts the input data with a custom compare operator
+     * @param mpi_comm MPI commuicator (all ranks have to call the function)
+     * @param data_vec Vector that contains the input data
+     * @param global_elements The total number of elements on all PEs, set to -1 if unknown
+     * @param comp The compare operator
+     */
     template<class Compare>
     void sort(MPI_Comm mpi_comm,  std::vector<T> &data, long long global_elements, Compare comp) {
         RBC::Comm comm;
@@ -62,6 +84,13 @@ public:
         sort_range(comm, data, global_elements, comp);
     }
     
+    /**
+     * Sort data on an RBC communicator
+     * @param mpi_comm MPI commuicator (all ranks have to call the function)
+     * @param data_vec Vector that contains the input data
+     * @param global_elements The total number of elements on all PEs, set to -1 if unknown
+     * @param comp The compare operator
+     */
     template<class Compare>
     void sort_range(RBC::Comm comm, std::vector<T> &data, 
             long long global_elements, Compare comp) {
@@ -93,10 +122,12 @@ public:
                     data.size(), comm, 0, 0, mpi_type, seed, min_samples, add_pivot, true);
         }
 
+        /* Recursive */
         quickSort(ival, comp);
 
         delete[] buffer;
         
+        /* Base Cases */
         double start, end;
         if (barriers)
             RBC::Barrier(comm);
@@ -104,7 +135,7 @@ public:
         sortTwoPEIntervals(comp);
         end = getTime();
         t_sort_two = end - start;
-        
+                
         start = getTime();
         sortLocalIntervals(comp);
         end = getTime();
@@ -114,12 +145,18 @@ public:
         t_runtime = (total_end - total_start);
     }
     
+    /** 
+     * @return The maximal depth of recursion  
+     */
     int getDepth() {
         return depth;
     }
     
-    /*
+    /**
      * Get timers and their names
+     * @param timer_names Vector containing the names of the timers
+     * @param max_timers Vector containing the maximal timer value across all PEs
+     * @param comm RBC communicator
      */
     void getTimers(std::vector<std::string> &timer_names,
 	    std::vector<double> &max_timers, RBC::Comm comm) {
@@ -217,9 +254,9 @@ private:
         
         //Check if recursion should be ended 
         if (isBaseCase(ival))
-            return;
+            return;        
         
-        
+        /* Pivot Selection */
         T pivot;
         long long split_idx;
         double t_start, t_end;
@@ -232,32 +269,27 @@ private:
         if (zero_global_elements)
             return;
         
-//        int comm_start = ival.comm.GetFirst();
-//        std::cout << W(depth) << W(comm_start) << W(ival.rank) << "Pivot" << std::endl;
-        
+        /* Partitioning */
         t_start = startTime(ival.comm);
         long long bound1, bound2;        
         partitionData(ival, pivot, split_idx, &bound1, &bound2, comp);
         t_end = getTime();
         t_partition += (t_end - t_start);
         
-//        std::cout << W(depth) << W(comm_start) << W(ival.rank) << "Partition" << std::endl;
-
+        /* Calculate how data has to be exchanged */
         t_start = startTime(ival.comm);
         calculateExchangeData(ival, bound1, split_idx, bound2);
         t_end = getTime();
         t_calculate += (t_end - t_start);        
-        
-//        std::cout << W(depth) << W(comm_start) << W(ival.rank) << "CalculateExchange" << std::endl;
 	
+        /* Exchange data */
         t_start = startTime(ival.comm);
         exchangeData(ival);
         t_end = getTime();
         t_exchange += (t_end - t_start);
         t_vec_exchange.push_back(t_end - t_start);
-        
-//        std::cout << W(depth) << W(comm_start) << W(ival.rank) << "ExchangeData" << std::endl;
 
+        /* Create QSIntervals for the next recursion level */
         long long mid, offset;
         int left_size;
         bool shizophrenic;
@@ -283,8 +315,8 @@ private:
             if (ival.rank > ival_left.end_PE || shizophrenic)
                 sort_right = true;
         }
-//        std::cout << W(depth) << W(comm_start) << W(ival.rank) << "Recursive" << std::endl;
 
+        /* Call recursively */
         if (sort_left && sort_right) {
             shizophrenicQuickSort(ival_left, ival_right, comp);
         } else if (sort_left) {
@@ -300,6 +332,8 @@ private:
     template<class Compare>
     void shizophrenicQuickSort(QSInterval_SQS<T> &ival_left, QSInterval_SQS<T> &ival_right,
             Compare comp) {
+        depth++;
+        
         //Check if recursion should be ended
         if (isBaseCase(ival_left)) {
             quickSort(ival_right, comp);
@@ -310,20 +344,18 @@ private:
             return;
         }
         
-        depth++;
-
+        /* Pivot Selection */
         T pivot_left, pivot_right;
         long long split_idx_left, split_idx_right;
-        double t_start, t_end;
-        
+        double t_start, t_end;        
         t_start = startTimeShizo(ival_left.comm, ival_right.comm);
         getPivotShizo(ival_left, ival_right, pivot_left, pivot_right,
                        split_idx_left, split_idx_right, comp);
         t_end = getTime();
         t_pivot += (t_end - t_start);
         
-        t_start = startTimeShizo(ival_left.comm, ival_right.comm);
-        
+        /* Partitioning */        
+        t_start = startTimeShizo(ival_left.comm, ival_right.comm);        
         long long bound1_left, bound2_left, bound1_right, bound2_right;
         partitionData(ival_left, pivot_left, split_idx_left, &bound1_left, 
                       &bound2_left, comp);          
@@ -331,27 +363,28 @@ private:
                       &bound2_right, comp);  
         t_end = getTime();
         t_partition += (t_end - t_start);
-
+                
+        /* Calculate how data has to be exchanged */
         t_start = startTimeShizo(ival_left.comm, ival_right.comm);
         calculateExchangeDataShizo(ival_left, ival_right, bound1_left, split_idx_left,
                 bound2_left, bound1_right, split_idx_right, bound2_right);
         t_end = getTime();
         t_calculate += (t_end - t_start);
         
+        /* Exchange Data */
         t_start = startTimeShizo(ival_left.comm, ival_right.comm);
         exchangeDataShizo(ival_left, ival_right);
         t_end = getTime();
         t_exchange += (t_end - t_start);
         t_vec_exchange.push_back(t_end - t_start);
         
+        /* Create QSIntervals for the next recursion level */
         long long mid_left, mid_right, offset_left, offset_right;
         int left_size_left, left_size_right;
         bool shizophrenic_left, shizophrenic_right;
         calculateSplit(ival_left, left_size_left, offset_left, shizophrenic_left, mid_left);
         calculateSplit(ival_right, left_size_right, offset_right, shizophrenic_right, mid_right);
-
         RBC::Comm left1, right1, left2, right2;
-
         if (use_MPI_collectives)
             t_start = startTimeShizo_barrier(ival_left.comm, ival_right.comm);
         else
@@ -393,7 +426,7 @@ private:
             sort_right = true;
         }
 
-        //Recursive call to quicksort/shizophrenicQuicksort
+        /* Call recursively */
         if (sort_left && sort_right) {
             shizophrenicQuickSort(*left_i, *right_i, comp);
         } else if (sort_left) {
@@ -401,11 +434,11 @@ private:
         } else if (sort_right) {
             quickSort(*right_i, comp);
         }
-    }
+    }    
     
-    
-    /*
+    /**
      * Check for base cases
+     * @return true if base case, false if no base case
      */
     bool isBaseCase(QSInterval_SQS<T> &ival) {
         if (ival.rank == -1)
@@ -420,7 +453,14 @@ private:
         }
         return false;
     }
-
+    
+    /*
+     * Returns the current time
+     */
+    double getTime() {
+        return MPI_Wtime();
+    }
+    
     double startTime(RBC::Comm &comm) {
         if (!barriers)
             return getTime();
@@ -456,7 +496,7 @@ private:
     }
     
     /*
-     * Selects a random element from the interval as the pivot
+     * Select an element from the interval as the pivot
      */
     template<class Compare>
     void getPivot(QSInterval_SQS<T> const &ival, T &pivot, long long &split_idx,
@@ -466,7 +506,7 @@ private:
     }
     
     /*
-     * Select a random element as the pivot from both intervals
+     * Select an element as the pivot from both intervals
      */
     template<class Compare>
     void getPivotShizo(QSInterval_SQS<T> const &ival_left,
@@ -481,18 +521,25 @@ private:
      * Partitions the data separatly for the elements with index smaller less_idx 
      * and the elements with index larger less_idx
      * Returns the indexes of the first element of the right partitions
+     * @param index1 First element of the first partition with large elements
+     * @param index2 First element of the second partition with large elements
      */
     template<class Compare>
     void partitionData(QSInterval_SQS<T> const &ival, T pivot, long long less_idx,
                        long long *index1, long long *index2, Compare comp) {
         long long start1 = ival.local_start, end1 = less_idx,
                 start2 = less_idx, end2 = ival.local_end;
-        *index1 = partitionData_(data->data(), pivot, start1, end1, true, comp);
-        *index2 = partitionData_(data->data(), pivot, start2, end2, false, comp);
+        *index1 = partitionSequence(data->data(), pivot, start1, end1, true, comp);
+        *index2 = partitionSequence(data->data(), pivot, start2, end2, false, comp);
     }
 
+    /**
+     * Partition the data with index [start, end)
+     * @param less_equal If true, compare to the pivot with <=, else compare with >
+     * @return Index of the first large element
+     */
     template<class Compare>
-    long long partitionData_(T *data_ptr, T pivot, long long start, long long end,
+    long long partitionSequence(T *data_ptr, T pivot, long long start, long long end,
             bool less_equal, Compare comp) {
         T* bound;
 	if (less_equal) {
@@ -588,6 +635,9 @@ private:
         DataExchange_SQS<T>::exchangeDataShizo(left, right);
     }  
 
+    /*
+     * Calculate how the PEs should be split into two groups
+     */
     void calculateSplit(QSInterval_SQS<T> &ival, int &left_size, long long &offset,
             bool &shizophrenic, long long &mid) {
         assert(ival.global_small_elements != 0);
@@ -621,7 +671,7 @@ private:
         int right_start = left_size;
         if (shizophrenic)
             right_start--;
-        int right_end = size - 1; //std::min((long long) size - 1, ival.global_elements - 1);
+        int right_end = std::min(static_cast<long long>(size - 1), ival.global_elements - 1);
         right_end = std::max(right_start, right_end);
         RBC::Split_Comm(ival.comm, 0, left_end, right_start, right_end,
                 left, right);
@@ -642,6 +692,9 @@ private:
         }
     }
    
+    /*
+     * Create QSIntervals for the next recursion level
+     */
     void createIntervals(QSInterval_SQS<T> &ival, long long offset, int left_size,
             bool shizophrenic,
             long long mid, RBC::Comm &comm_left, RBC::Comm &comm_right, 
@@ -683,14 +736,14 @@ private:
     }
     
     /* 
-     * Add an interval with two PEs 
+     * Add an interval with two PEs (base case)
      */
     void addTwoPEInterval(QSInterval_SQS<T> const &ival) {
         two_PE_intervals.push_back(ival);
     }
     
     /* 
-     * Add an interval that can be sorted locally
+     * Add an interval that can be sorted locally (base case)
      */
     void addLocalInterval(QSInterval_SQS<T> &ival) {
         local_intervals.push_back(ival);
@@ -716,14 +769,6 @@ private:
             bc1_elements += local_intervals[i].local_elements;
             RBC::Comm_free(local_intervals[i].comm);
         }
-    }
-
-
-    /*
-     * Returns the current time
-     */
-    double getTime() {
-        return MPI_Wtime();
     }
 
     int depth = 0, seed;
