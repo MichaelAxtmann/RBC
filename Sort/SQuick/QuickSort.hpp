@@ -63,7 +63,7 @@ public:
      * Sorts the input data
      * @param mpi_comm MPI commuicator (all ranks have to call the function)
      * @param data_vec Vector that contains the input data
-     * @param global_elements The total number of elements on all PEs, set to -1 if unknown
+     * @param global_elements The total number of elements on all PEs, set to -1 if unknown of if the global input is not evenly distributed, i.e., x, ..., x, x-1, ..., x-1.
      */
     void sort(MPI_Comm mpi_comm, std::vector<T> &data_vec, long long global_elements = -1) {
         sort(mpi_comm, data_vec, global_elements, std::less<T>());
@@ -73,7 +73,7 @@ public:
      * Sorts the input data with a custom compare operator
      * @param mpi_comm MPI commuicator (all ranks have to call the function)
      * @param data_vec Vector that contains the input data
-     * @param global_elements The total number of elements on all PEs, set to -1 if unknown
+     * @param global_elements The total number of elements on all PEs, set to -1 if unknown of if the global input is not evenly distributed, i.e., x, ..., x, x-1, ..., x-1.
      * @param comp The compare operator
      */
     template<class Compare>
@@ -88,7 +88,7 @@ public:
      * Sort data on an RBC communicator
      * @param mpi_comm MPI commuicator (all ranks have to call the function)
      * @param data_vec Vector that contains the input data
-     * @param global_elements The total number of elements on all PEs, set to -1 if unknown
+     * @param global_elements The total number of elements on all PEs, set to -1 if unknown of if the global input is not evenly distributed, i.e., x, ..., x, x-1, ..., x-1.
      * @param comp The compare operator
      */
     template<class Compare>
