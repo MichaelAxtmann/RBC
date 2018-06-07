@@ -30,6 +30,8 @@ QuickSort<value_type> make_sorter(int seed = 1, long long min_samples = 64) {
 
 /**
  * Configurable interface.
+ *
+ * @param global_elements The total number of elements on all PEs, set to -1 if unknown
  */
 template<class value_type, class Compare = std::less<value_type>>
     void sort(MPI_Comm mpi_comm, std::vector<value_type> &data,
@@ -39,6 +41,8 @@ template<class value_type, class Compare = std::less<value_type>>
 
 /**
  * Configurable interface.
+ *
+ * @param global_elements The total number of elements on all PEs, set to -1 if unknown
  */
 template<class value_type, class Compare = std::less<value_type>>
     void sort(RBC::Comm rbc_comm, std::vector<value_type> &data,
