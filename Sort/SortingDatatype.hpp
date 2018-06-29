@@ -32,21 +32,31 @@ template<typename T>
 class SortingDatatype {
 public:
 
-    static MPI_Datatype getMPIDatatype() {
-        if (std::is_same<T, int>::value)
-            return MPI_INT;
-        else if (std::is_same<T, short>::value)
-            return MPI_SHORT;
-        else if (std::is_same<T, char>::value)
-            return MPI_CHAR;
-        else if (std::is_same<T, long>::value)
-            return MPI_LONG;
-        else if (std::is_same<T, float>::value)
-            return MPI_FLOAT;
-        else if (std::is_same<T, double>::value)
-            return MPI_DOUBLE;
-        else if (std::is_same<T, sort_pair>::value)
-            return MPI_FLOAT_INT;
+    static int getMPIDatatype(MPI_Datatype* type) {
+        if (std::is_same<T, int>::value) {
+            *type = MPI_INT;
+            return MPI_SUCCESS;
+        } else if (std::is_same<T, short>::value) {
+            *type = MPI_SHORT;
+            return MPI_SUCCESS;
+        } else if (std::is_same<T, char>::value) {
+            *type = MPI_CHAR;
+            return MPI_SUCCESS;
+        } else if (std::is_same<T, long>::value) {
+            *type = MPI_LONG;
+            return MPI_SUCCESS;
+        } else if (std::is_same<T, float>::value) {
+            *type = MPI_FLOAT;
+            return MPI_SUCCESS;
+        } else if (std::is_same<T, double>::value) {
+            *type = MPI_DOUBLE;
+            return MPI_SUCCESS;
+        } else if (std::is_same<T, sort_pair>::value) {
+            *type = MPI_FLOAT_INT;
+            return MPI_SUCCESS;
+        } else {
+            return MPI_ERR_TYPE;
+        }
     }
 
     static SORT_TYPE getSortType(std::string datatype) {

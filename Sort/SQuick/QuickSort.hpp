@@ -53,7 +53,12 @@ public:
     : seed(seed), barriers(barriers),
     split_MPI_comm(split_MPI_comm), use_MPI_collectives(use_MPI_collectives), add_pivot(add_pivot),
     min_samples(min_samples){
-        mpi_type = SortingDatatype<T>::getMPIDatatype();
+        SortingDatatype<T>::getMPIDatatype(&mpi_type);
+    }
+
+    static bool validDatatype() {
+        MPI_Datatype mpi_type;
+        return SortingDatatype<T>::getMPIDatatype(&mpi_type) != MPI_ERR_TYPE;
     }
 
     ~QuickSort() {
