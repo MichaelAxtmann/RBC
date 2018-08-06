@@ -9,10 +9,10 @@ LIBDIR = lib${SUBDIR}
 SRCDIR_RANGE = $(SRCDIR)/RangeBasedComm
 TARGETDIR_RANGE = $(TARGETDIR)/RBC
 	
-all : $(TARGETDIR) $(LIBDIR) $(LIBDIR)/lib_rbc.a $(TARGETDIR)/example
+all : $(TARGETDIR) $(LIBDIR) $(LIBDIR)/librbc.a $(TARGETDIR)/example
 	
 # Create the executables	
-EXAMPLE = $(TARGETDIR)/Example.o $(LIBDIR)/lib_rbc.a
+EXAMPLE = $(TARGETDIR)/Example.o $(LIBDIR)/librbc.a
 $(TARGETDIR)/example : $(EXAMPLE)
 	$(CXX) -o $@ $(EXAMPLE)
 	
@@ -21,7 +21,7 @@ RANGE_OBJ = $(addprefix $(TARGETDIR_RANGE)/,RBC.o Allgather.o Allreduce.o Barrie
 	AllreduceTwotree.o ScanTwotree.o ScanAndBcastTwotree.o Twotree.o Bcast.o \
 	Exscan.o Gather.o Recv.o Reduce.o Scan.o ScanAndBcast.o Send.o \
 	Sendrecv.o) 
-$(LIBDIR)/lib_rbc.a : $(RANGE_OBJ)
+$(LIBDIR)/librbc.a : $(RANGE_OBJ)
 	ar rcs $@ $(RANGE_OBJ)
 
 # Compile Example file
