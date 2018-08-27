@@ -14,6 +14,7 @@
 #include <vector>
 #include <memory>
 #include <ostream>
+#include <functional>
 
 #include "RangeGroup.hpp"
 
