@@ -9,6 +9,7 @@
 
 #include <mpi.h>
 
+#include "Recv.hpp"
 #include "../RBC.hpp"
 
 namespace RBC {
@@ -40,6 +41,21 @@ namespace RBC {
             bool receiving;
             MPI_Request request;
         };
+
+        /*
+         * Receive operation which invokes MPI_Recv if count > 0
+         */
+        int RecvNonZeroed(void* buf, int count, MPI_Datatype datatype, int source, int tag,
+                Comm const &comm, MPI_Status *status) {
+            if (count == 0) return 0;
+            
+            if (source == MPI_ANY_SOURCE) {
+                return MPI_Recv(buf, count, datatype, source, tag, comm.mpi_comm, status);
+            } else {
+                return MPI_Recv(buf, count, datatype, comm.RangeRankToMpiRank(source),
+                        tag, comm.mpi_comm, status);
+            }
+        }
     } // end namespace _internal
     
     int Irecv(void* buffer, int count, MPI_Datatype datatype, int source, int tag,

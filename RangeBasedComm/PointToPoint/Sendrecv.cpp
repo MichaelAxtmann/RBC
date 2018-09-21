@@ -44,7 +44,35 @@ namespace RBC {
         private:
             MPI_Request requests[2];
         };
-    }
+
+        
+
+        /*
+         * Sendrecv operation which drops empty messages.
+         */
+        int SendrecvNonZeroed(void *sendbuf,
+                int sendcount, MPI_Datatype sendtype,
+                int dest, int sendtag,
+                void *recvbuf, int recvcount, MPI_Datatype recvtype,
+                int source, int recvtag,
+                Comm const &comm, MPI_Status *status) {
+            if (sendcount > 0 && recvcount > 0) {
+            return MPI_Sendrecv(sendbuf,
+                    sendcount, sendtype,
+                    comm.RangeRankToMpiRank(dest), sendtag,
+                    recvbuf, recvcount, recvtype,
+                    comm.RangeRankToMpiRank(source), recvtag,
+                    comm.mpi_comm, status);
+            } else if (sendcount > 0) {
+                RBC::Send(sendbuf, sendcount, sendtype, dest, sendtag, comm);
+            } else if (recvcount > 0) {
+                RBC::Recv(recvbuf, recvcount, recvtype, source, recvtag, comm, MPI_STATUS_IGNORE);
+            }
+
+            // Case: Both messages are empty.
+            return 0;
+        }
+    } // end namespace _internal
 
     int Isendrecv(void *sendbuf,
             int sendcount, MPI_Datatype sendtype,

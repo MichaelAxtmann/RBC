@@ -63,6 +63,19 @@ namespace RBC {
             // bool requested;
             MPI_Request request;
         };
+
+
+        /*
+         * Send operation which invokes MPI_Send if count > 0
+         */
+        int SendNonZeroed(const void *sendbuf, int count, MPI_Datatype datatype, int dest,
+                int tag, Comm const &comm) {
+            if (count == 0) return 0;
+            
+            return MPI_Send(const_cast<void*> (sendbuf), count, datatype,
+                    comm.RangeRankToMpiRank(dest), tag, comm.mpi_comm);
+        }
+        
     } // end namespace _internal
 
     int Isend(const void *sendbuf, int count, MPI_Datatype datatype, int dest,

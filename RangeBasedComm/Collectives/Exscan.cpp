@@ -146,6 +146,82 @@ namespace RBC {
     
     namespace _internal {
 
+        namespace optimized {
+
+            int Exscan(const void* sendbuf, void* recvbuf, int count,
+                    MPI_Datatype datatype, MPI_Op op, Comm const &comm) {
+                if (comm.useMPICollectives()) {
+                    return MPI_Exscan(const_cast<void*> (sendbuf), recvbuf, count, datatype, op, comm.mpi_comm);
+                }
+
+                int rank, size;
+                Comm_rank(comm, &rank);
+                Comm_size(comm, &size);
+                MPI_Aint lb, type_size;
+                MPI_Type_get_extent(datatype, &lb, &type_size);
+                int datatype_size = static_cast<int> (type_size);
+                int recv_size = count * datatype_size;
+
+                if (size == 1 && count == 0) return 0;
+
+                char *tmp_buf = new char[recv_size];
+                char *scan_buf = new char[recv_size];
+                std::memcpy(scan_buf, sendbuf, recv_size);
+
+                int commute = 0;
+                MPI_Op_commutative(op, &commute);
+
+                int mask = 1;
+                int flag = 0;
+                while (mask < size) {
+                    const int target = rank ^ mask;
+                    mask <<= 1;
+
+                    if (target < size) {
+                        Sendrecv(scan_buf,
+                                count,
+                                datatype,
+                                target,
+                                Tag_Const::SCAN,
+                                tmp_buf,
+                                count,
+                                datatype,
+                                target,
+                                Tag_Const::SCAN,
+                                comm,
+                                MPI_STATUS_IGNORE);
+
+                        const bool left_target = target < rank;
+                        if (left_target) {
+                            MPI_Reduce_local(tmp_buf, scan_buf, count, datatype, op);
+
+                            // Handle recvbuf in a special way
+                            if (rank) {
+                                if (flag) {
+                                    MPI_Reduce_local(tmp_buf, recvbuf, count, datatype, op);
+                                } else {
+                                    std::memcpy(recvbuf, tmp_buf, recv_size);
+                                    flag = 1;
+                                }
+                            }
+                        } else {
+                            if (commute) {
+                                MPI_Reduce_local(tmp_buf, scan_buf, count, datatype, op);
+                            } else {
+                                MPI_Reduce_local(scan_buf, tmp_buf, count, datatype, op);
+                                std::memcpy(scan_buf, tmp_buf, recv_size);
+                            }
+                        }
+                    }
+                }
+                
+                delete[] tmp_buf;
+                delete[] scan_buf;
+                return 0;
+            }
+            
+        } // end namespace optimized
+
         /*
          * Request for the exscan
          */

@@ -7,8 +7,8 @@
  * All rights reserved. Published under the BSD-2 license in the LICENSE file.
 ******************************************************************************/
 
-#ifndef MPI_RANGED_HPP
-#define MPI_RANGED_HPP
+#ifndef RBC_RBC_HPP
+#define RBC_RBC_HPP
 
 #include <mpi.h>
 #include <vector>
@@ -128,6 +128,12 @@ namespace RBC {
         int rank, size;
     };
     std::ostream& operator<<(std::ostream& os, const Comm& comm);
+
+    namespace Model_Const {
+        const double
+            ALPHA = 1e-6,
+            BETA  = 8.55e-11;
+    };
     
     namespace Tag_Const {
         const int 
@@ -310,6 +316,189 @@ namespace RBC {
     int Allgather(const void *sendbuf, int sendcount, MPI_Datatype sendtype,
             void *recvbuf, int recvcount, MPI_Datatype recvtype,
             RBC::Comm const &comm);
+
+    namespace _internal {
+        namespace optimized {
+    
+            /**
+             * Blocking allgather with equal amount of elements on each process
+             * This method uses different implementations depending on the
+             * size of comm and the input size.
+             * @param sendbuf Starting address of send buffer
+             * @param sendcount Number of elements in send buffer
+             * @param sendtype MPI datatype of the elements
+             * @param recvbuf Buffer where the gathered elements will be stored (only relevant at root)
+             * @param recvcount Number of elements for each receive 
+             * @param recvtype MPI datatype of the receive elements
+             * @param comm The Range comm on which the operation is performed
+             */
+            int Allgather(const void *sendbuf, int sendcount, MPI_Datatype sendtype,
+                    void *recvbuf, int recvcount, MPI_Datatype recvtype,
+                    Comm const &comm);
+    
+            /**
+             * Blocking allgather with equal amount of elements on each process
+             * This method uses the dissemination algorithm.
+             * @param sendbuf Starting address of send buffer
+             * @param sendcount Number of elements in send buffer
+             * @param sendtype MPI datatype of the elements
+             * @param recvbuf Buffer where the gathered elements will be stored (only relevant at root)
+             * @param recvcount Number of elements for each receive 
+             * @param recvtype MPI datatype of the receive elements
+             * @param comm The Range comm on which the operation is performed
+             */
+            int AllgatherDissemination(const void *sendbuf, int sendcount, MPI_Datatype sendtype,
+                    void *recvbuf, int recvcount, MPI_Datatype recvtype,
+                    Comm const &comm);
+    
+            /**
+             * Blocking allgather with equal amount of elements on each process
+             * This method uses the hypercube algorithm.
+             * @param sendbuf Starting address of send buffer
+             * @param sendcount Number of elements in send buffer
+             * @param sendtype MPI datatype of the elements
+             * @param recvbuf Buffer where the gathered elements will be stored (only relevant at root)
+             * @param recvcount Number of elements for each receive 
+             * @param recvtype MPI datatype of the receive elements
+             * @param comm The Range comm on which the operation is performed
+             */
+            int AllgatherHypercube(const void *sendbuf, int sendcount, MPI_Datatype sendtype,
+                    void *recvbuf, int recvcount, MPI_Datatype recvtype,
+                    Comm const &comm);
+    
+            /**
+             * Blocking allgather with equal amount of elements on each process
+             * This method uses the pipeline algorithm.
+             * @param sendbuf Starting address of send buffer
+             * @param sendcount Number of elements in send buffer
+             * @param sendtype MPI datatype of the elements
+             * @param recvbuf Buffer where the gathered elements will be stored (only relevant at root)
+             * @param recvcount Number of elements for each receive 
+             * @param recvtype MPI datatype of the receive elements
+             * @param comm The Range comm on which the operation is performed
+             */
+            int AllgatherPipeline(const void *sendbuf, int sendcount, MPI_Datatype sendtype,
+                    void *recvbuf, int recvcount, MPI_Datatype recvtype,
+                    Comm const &comm);
+
+            /**
+             * Blocking Allreduce
+             * This method uses a hypercube reduce-scatter algorithm
+             * followed by a hypercube allgather algorithm. If the
+             * number of processes is not a power of two, we do two
+             * extra transfers to break down to the next smaller
+             * power.
+             * @param sendbuf Starting address of send buffer
+             * @param recvbuf Starting address of receive buffer
+             * @param count Number of elements in send buffer
+             * @param datatype MPI datatype of the elements
+             * @param op Operation used to reduce two elements
+             * @param comm The Range comm on which the operation is performed
+             */
+            int AllreduceScatterAllgather(const void* sendbuf, void* recvbuf,
+                    int count, MPI_Datatype datatype,
+                    MPI_Op op, Comm const &comm);
+
+            /**
+             * Blocking Allreduce
+             * This method uses a hypercube algorithm. If the
+             * number of processes is not a power of two, we do two
+             * extra transfers to break down to the next smaller
+             * power.
+             * @param sendbuf Starting address of send buffer
+             * @param recvbuf Starting address of receive buffer
+             * @param count Number of elements in send buffer
+             * @param datatype MPI datatype of the elements
+             * @param op Operation used to reduce two elements
+             * @param comm The Range comm on which the operation is performed
+             */
+            int AllreduceHypercube(const void* sendbuf, void* recvbuf,
+                    int count, MPI_Datatype datatype,
+                    MPI_Op op, Comm const &comm);
+    
+            /**
+             * Blocking Allreduce
+             * This method uses different implementations depending on the
+             * size of comm and the input size.
+             * @param sendbuf Starting address of send buffer
+             * @param recvbuf Starting address of receive buffer
+             * @param count Number of elements in send buffer
+             * @param datatype MPI datatype of the elements
+             * @param op Operation used to reduce two elements
+             * @param comm The Range comm on which the operation is performed
+             */
+            int Allreduce(const void* sendbuf, void* recvbuf,
+                    int count, MPI_Datatype datatype,
+                    MPI_Op op, Comm const &comm);
+    
+            /**
+             * Blocking scan (partial reductions)
+             * This method uses a doubling algorithm.
+             * @param sendbuf Starting address of send buffer
+             * @param recvbuf Starting address of receive buffer
+             * @param count Number of elements in send buffer
+             * @param datatype MPI datatype of the elements
+             * @param op Operation used to reduce two elements
+             * @param comm The Range comm on which the operation is performed
+             */
+            int Scan(const void *sendbuf, void *recvbuf, int count, MPI_Datatype datatype,
+                    MPI_Op op, RBC::Comm const &comm);
+    
+            /**
+             * Blocking exclusive scan (partial reductions)
+             * This method uses a doubling algorithm.
+             * @param sendbuf Starting address of send buffer
+             * @param recvbuf Starting address of receive buffer
+             * @param count Number of elements in send buffer
+             * @param datatype MPI datatype of the elements
+             * @param op Operation used to reduce two elements
+             * @param comm The Range comm on which the operation is performed
+             */
+            int Exscan(const void *sendbuf, void *recvbuf, int count, MPI_Datatype datatype,
+                    MPI_Op op, RBC::Comm const &comm);
+    
+            /**
+             * Blocking bcast
+             * This method uses a binomial tree algorithm.
+             * @param buffer Buffer where the broadcast value will be stored
+             * @param count Number of elements that will be broadcasted
+             * @param datatype MPI datatype of the elements
+             * @param root The rank that initially has the broadcast value
+             * @param comm The Range comm on which the operation is performed
+             */
+            int BcastBinomial(void* buffer, int count, MPI_Datatype datatype, int root,
+                    Comm const &comm);
+
+            /**
+             * Blocking broadcast
+             * This method uses a scatter hypercube-allgather
+             * algorithm. If the number of processes is not a power of
+             * two, we perform the algorithm on the next smaller power
+             * of two and move the results to the remaining processes.
+             * @param buffer Buffer where the broadcast value will be stored
+             * @param count Number of elements that will be broadcasted
+             * @param datatype MPI datatype of the elements
+             * @param root The rank that initially has the broadcast value
+             * @param comm The Range comm on which the operation is performed
+             */
+            int BcastScatterAllgather(void* buffer, int count, MPI_Datatype datatype, int root,
+                    Comm const &comm);
+
+            /**
+             * Blocking broadcast
+             * This method uses different implementations depending on the
+             * size of comm and the input size.
+             * @param buffer Buffer where the broadcast value will be stored
+             * @param count Number of elements that will be broadcasted
+             * @param datatype MPI datatype of the elements
+             * @param root The rank that initially has the broadcast value
+             * @param comm The Range comm on which the operation is performed
+             */
+            int Bcast(void* buffer, int count, MPI_Datatype datatype, int root,
+                    Comm const &comm);
+            
+        } // namespace optimize
+    } // end namespace _internal
     
     /**
      * Non-blocking allgather with specified number of elements on each process
@@ -879,4 +1068,4 @@ namespace RBC {
     int get_Rank_from_Status(RBC::Comm const &comm, MPI_Status status); 
 };
 
-#endif /* MPI_RANGED_HPP */
+#endif /* RBC_RBC_HPP */
