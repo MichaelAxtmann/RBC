@@ -244,7 +244,7 @@ namespace RBC {
                         // data. The process with rank 0 is excluded.
                         if (it == num_tailing_zeros) {
                             buffer_ptr += left_count * datatype_size;
-                            RecvNonZeroed(buffer_ptr, left_count, datatype,
+                            RecvNonZeroed(buffer_ptr, right_count, datatype,
                                     phys_target, Tag_Const::BCAST,
                                     comm, MPI_STATUS_IGNORE);
                             rem_size -= left_count;
