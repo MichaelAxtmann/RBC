@@ -120,6 +120,7 @@ namespace RBC {
             }
             
             
+
             /* Let 'size' be the number of processes and lpo2 the
              * largest power of two which is smaller or equal to size.
              * If 'size' is a power of two, we do nothing.  Otherwise,
@@ -196,7 +197,6 @@ namespace RBC {
                 const int lpo2_diff = size - lpo2;
 
                 const int rank_rooted = PhysicalRankToRootedRank(rank, size, lpo2_diff, root);
-                
                 const int logical_rank = RootedRankToLogicalRank(rank_rooted, lpo2,
                         lpo2_diff, root);
                     
@@ -224,16 +224,18 @@ namespace RBC {
                         level_size[it] = rem_size;
 
                         const int right_count = rem_size / 2;
-                        const int left_count = rem_size - right_count;
+                        const int left_count  = rem_size - right_count;
+
+                        const bool right_cube = logical_rank & (1 << it);
+                        if (right_cube) {
+                            buffer_ptr += left_count * datatype_size;
+                            rem_size -= left_count;
+                        } else {
+                            rem_size -= right_count;
+                        }
+                        
                         // We are still deactivated.
                         if (it > num_tailing_zeros) {
-                            const int root_target = 1 << it;
-                            if (logical_rank < root_target) {
-                                rem_size -= right_count;
-                            } else {
-                                buffer_ptr += left_count * datatype_size;
-                                rem_size -= left_count;
-                            }
                             continue;
                         }
 
@@ -243,18 +245,15 @@ namespace RBC {
                         // In our first active round, we receive
                         // data. The process with rank 0 is excluded.
                         if (it == num_tailing_zeros) {
-                            buffer_ptr += left_count * datatype_size;
                             RecvNonZeroed(buffer_ptr, right_count, datatype,
                                     phys_target, Tag_Const::BCAST,
                                     comm, MPI_STATUS_IGNORE);
-                            rem_size -= left_count;
-                            continue;
+                        } else {
+                            SendNonZeroed(buffer_ptr + left_count * datatype_size,
+                                    right_count, datatype, phys_target,
+                                    Tag_Const::BCAST,
+                                    comm);
                         }
-                        SendNonZeroed(buffer_ptr + left_count * datatype_size,
-                                right_count, datatype, phys_target,
-                                Tag_Const::BCAST,
-                                comm);
-                        rem_size -= right_count;
                     }
 
                     /* Perform allgather operation */
