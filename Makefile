@@ -47,10 +47,10 @@ $(TARGETDIR)/optimizedcollstest : $(OPTIMIZEDCOLLSTEST)
 	$(CXX) $(CXX_FLAGS) -o $@ $(OPTIMIZEDCOLLSTEST) -Llib -lrbc -L$(TLXRELEASEDIR)/tlx/ -ltlx
 
 test : $(TARGETDIR)/optimizedcollstest
-	rm out_mpi.log
-	rm out_rbc.log
-	echo "" >> out_mpi.log
-	echo "" >> out_rbc.log
+	rm -f out_mpi.log
+	rm -f out_rbc.log
+	touch out_mpi.log
+	touch out_rbc.log
 	for i in 1 2 3 4 5 6 6 7 8 9 10; do mpirun -np $$i $(TARGETDIR)/optimizedcollstest 1; done
 	for i in 1 2 3 4 5 6 6 7 8 9 10; do mpirun -np $$i $(TARGETDIR)/optimizedcollstest 0; done 
 	diff out_mpi.log out_rbc.log
