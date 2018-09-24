@@ -351,24 +351,36 @@ namespace RBC {
                     void *recvbuf, int recvcount, MPI_Datatype recvtype,
                     Comm const &comm);
     
-            /**
-             * Blocking allgather with equal amount of elements on
-             * each process This method uses the dissemination
-             * algorithm and works with an individual local input size
-             * on each process. The user just have to pass the total
-             * number of elements. This vectorized implementation does
-             * not come with any extra cost.
+            /* Allgather operation but any process is allowed to choose its own input size.
              * @param sendbuf Starting address of send buffer
-             * @param sendcount Number of elements in send buffer
+             * @param sendcount Number of elements provided by this process
              * @param sendtype MPI datatype of the elements
              * @param recvbuf Buffer where the gathered elements will be stored (only relevant at root)
-             * @param recvcount Total number of distributed input elements.
+             * @param recvcount Total number of distributed elements.
              * @param recvtype MPI datatype of the receive elements
              * @param comm The Range comm on which the operation is performed
              */
             int AllgathervDissemination(const void *sendbuf, int sendcount, MPI_Datatype sendtype,
                     void *recvbuf, int recvcount, MPI_Datatype recvtype,
                     Comm const &comm);
+    
+            /* Allgather-merge operation. Any process is allowed to choose its own input size.
+             * @param sendbuf Starting address of send buffer
+             * @param sendcount Number of elements provided by this process
+             * @param sendtype MPI datatype of the elements
+             * @param recvbuf Buffer where the gathered elements will be stored (only relevant at root)
+             * @param recvcount Total number of distributed elements.
+             * @param recvtype MPI datatype of the receive elements
+             * @param comm The Range comm on which the operation is performed
+             * #param merger binary-merge algorithm
+             */
+            int AllgathervDissemination(const void *sendbuf, int sendcount, MPI_Datatype sendtype,
+                    void *recvbuf, int recvcount, MPI_Datatype recvtype,
+                    Comm const &comm,
+                    void (*merger)(
+                        const void* begin1, const void* end1,
+                        const void* begin2, const void* end2,
+                        void* out));
     
             /**
              * Blocking allgather with equal amount of elements on each process

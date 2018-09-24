@@ -1,5 +1,5 @@
 CXX = mpic++
-CXX_FLAGS = -march=native -std=c++11 -O3 -DNDEBUG -g -Wall
+CXX_FLAGS = -march=native -std=c++17 -O3 -DNDEBUG -g -Wall
 
 .PHONY: rebuild all clean
 	

@@ -16,6 +16,8 @@
 #include <vector>
 #include <stdlib.h> /* srand, rand */
 #include <cstdlib>
+#include <algorithm> /* merge */
+#include <functional> /* less */
 
 #define PRINT_ROOT(msg) if (rank == 0) std::cout << msg << std::endl;
 
@@ -42,6 +44,13 @@ void GenerateData(std::vector<long>& send, std::vector<long>& recv) {
     {std::stringstream buffer;                                          \
     buffer << rank << ": " << string << "\n";                              \
     MPI_File_write_ordered( fh, buffer.str().c_str(), buffer.str().size(), MPI_CHAR, MPI_STATUS_IGNORE );}
+
+void merge(const void* begin1, const void* end1,
+        const void* begin2, const void* end2,
+        void* out) { 
+    std::merge<const long*, const long*, long*>((const long*) begin1, (const long*) end1,
+            (const long*) begin2, (const long*) end2, (long*) out, std::less<long>());
+} 
 
 
 int main(int argc, char** argv) {
@@ -84,6 +93,16 @@ int main(int argc, char** argv) {
             GenerateData(send, recv);
             MPI_Allgather(send.data(), num_els, type, recv.data(), num_els, type, comm);
             PrintDistributed("AllgatherDissemination: " << std::endl << send << std::endl << recv);
+            
+            if (tlx::is_power_of_two(size)) {
+                GenerateData(send, recv);
+                MPI_Allgather(send.data(), num_els, type, recv.data(), num_els, type, comm);
+                PrintDistributed("AllgatherHypercube: " << std::endl << send << std::endl << recv);
+            }
+
+            GenerateData(send, recv);
+            MPI_Allgather(send.data(), num_els, type, recv.data(), num_els, type, comm);
+            PrintDistributed("AllgatherPipeline: " << std::endl << send << std::endl << recv);
 
             {
                 std::vector<long> send(rand() % (num_els + 1));
@@ -98,22 +117,38 @@ int main(int argc, char** argv) {
                         type, comm);
                 PrintDistributed("AllgathervDissemination: " << std::endl << send << std::endl << recv);
             }
-            
-            if (tlx::is_power_of_two(size)) {
-                GenerateData(send, recv);
-                MPI_Allgather(send.data(), num_els, type, recv.data(), num_els, type, comm);
-                PrintDistributed("AllgatherHypercube: " << std::endl << send << std::endl << recv);
-            }
 
-            GenerateData(send, recv);
-            MPI_Allgather(send.data(), num_els, type, recv.data(), num_els, type, comm);
-            PrintDistributed("AllgatherPipeline: " << std::endl << send << std::endl << recv);
+            // Allgatherv-merge
+            {
+                std::vector<long> send(rand() % (num_els + 1));
+                int send_cnt = send.size();
+                std::vector<int> sizes(size);
+                RBC::Allgather(&send_cnt, 1, MPI_INT, sizes.data(), 1, MPI_INT, rcomm);
+                std::vector<int> sizes_exscan(size + 1, 0);
+                tlx::exclusive_scan(sizes.begin(), sizes.end(), sizes_exscan.begin(), 0);
+                std::vector<long> recv(sizes_exscan.back());
+                if (recv.size()) MPI_Allgatherv(send.data(), send.size(),
+                        type, recv.data(), sizes.data(), sizes_exscan.data(),
+                        type, comm);
+                std::sort(recv.begin(), recv.end(), std::less<>());
+                PrintDistributed("AllgathervMergeDissemination: " << std::endl << send << std::endl << recv);
+            }
         
         } else {
 
             GenerateData(send, recv);
             RBC::_internal::optimized::AllgatherDissemination(send.data(), num_els, type, recv.data(), num_els, type, rcomm);
             PrintDistributed("AllgatherDissemination: " << std::endl << send << std::endl << recv);
+            
+            if (tlx::is_power_of_two(size)) {
+                GenerateData(send, recv);
+                RBC::_internal::optimized::AllgatherHypercube(send.data(), num_els, type, recv.data(), num_els, type, rcomm);
+                PrintDistributed("AllgatherHypercube: " << std::endl << send << std::endl << recv);
+            }
+                
+            GenerateData(send, recv);
+            RBC::_internal::optimized::AllgatherPipeline(send.data(), num_els, type, recv.data(), num_els, type, rcomm);
+            PrintDistributed("AllgatherPipeline: " << std::endl << send << std::endl << recv);
 
             {
                 std::vector<long> send(rand() % (num_els + 1));
@@ -125,16 +160,20 @@ int main(int argc, char** argv) {
                         type, recv.data(), recv.size(), type, rcomm);
                 PrintDistributed("AllgathervDissemination: " << std::endl << send << std::endl << recv);
             }
-            
-            if (tlx::is_power_of_two(size)) {
-                GenerateData(send, recv);
-                RBC::_internal::optimized::AllgatherHypercube(send.data(), num_els, type, recv.data(), num_els, type, rcomm);
-                PrintDistributed("AllgatherHypercube: " << std::endl << send << std::endl << recv);
+
+            // Allgatherv-merge
+            {
+                std::vector<long> send(rand() % (num_els + 1));
+                int send_cnt = send.size();
+                int recv_cnt = 0;
+                RBC::Allreduce(&send_cnt, &recv_cnt, 1, MPI_INT, MPI_SUM, rcomm);
+                std::vector<long> recv(recv_cnt);
+
+                RBC::_internal::optimized::AllgathervDissemination(send.data(), send.size(),
+                        type, recv.data(), recv.size(), type, rcomm,
+                        merge);
+                PrintDistributed("AllgathervMergeDissemination: " << std::endl << send << std::endl << recv);
             }
-                
-            GenerateData(send, recv);
-            RBC::_internal::optimized::AllgatherPipeline(send.data(), num_els, type, recv.data(), num_els, type, rcomm);
-            PrintDistributed("AllgatherPipeline: " << std::endl << send << std::endl << recv);
 
         }
 

@@ -178,7 +178,7 @@ namespace RBC {
                     int rem_size = count;
                     const int logical_rank = PhysicalRankToLogicalRank(rank, lpo2_diff);
                     for (int it = log_p - 1; it >= 0; --it) {
-                        const int logical_target = (size_t)logical_rank ^ (size_t)1 << it;
+                        const int logical_target = logical_rank ^ 1 << it;
                         const int phys_target = LogicalRankToPhysicalRank(logical_target, lpo2_diff);
                         const bool left_target = logical_target < logical_rank;
 
@@ -227,7 +227,7 @@ namespace RBC {
                     /* Perform allgather operation */
 
                     for (int it = 0; it != log_p; ++it) {
-                        int logical_target = (size_t)logical_rank ^ (size_t)1 << it;
+                        int logical_target = logical_rank ^ 1 << it;
                         const int phys_target = LogicalRankToPhysicalRank(logical_target, lpo2_diff);
                         bool left_target = logical_target < logical_rank;
                         const int target_size = level_size[it] - rem_size;
@@ -346,7 +346,7 @@ namespace RBC {
                     const int log_p = std::log2(size);
                     const int logical_rank = PhysicalRankToLogicalRank(rank, lpo2_diff);
                     for (int it = log_p - 1; it >= 0; --it) {
-                        const int logical_target = (size_t)logical_rank ^ (size_t)1 << it;
+                        const int logical_target = logical_rank ^ 1 << it;
                         const int phys_target = LogicalRankToPhysicalRank(logical_target, lpo2_diff);
                         const bool left_target = logical_target < logical_rank;
 

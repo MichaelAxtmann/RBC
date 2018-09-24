@@ -259,7 +259,7 @@ namespace RBC {
                     /* Perform allgather operation */
 
                     for (int it = 0; it != log_p; ++it) {
-                        const int logical_target = (size_t)logical_rank ^ (size_t)1 << it;
+                        const int logical_target = logical_rank ^ 1 << it;
                         const int phys_target = LogicalRankToPhysicalRank(logical_target, size, lpo2, lpo2_diff, root);
                         const bool left_target = logical_target < logical_rank;
                         const int target_size = level_size[it] - rem_size;
