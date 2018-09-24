@@ -193,7 +193,7 @@ namespace RBC {
 
                 if (size == 1) {
                     // Move local input to output buffer.
-                    memcpy((char*)recvbuf + recv_size * rank, sendbuf, recv_size);
+                    memcpy((char*)recvbuf, sendbuf, recv_size);
 
                     return 0;
                 }
@@ -230,8 +230,8 @@ namespace RBC {
                 }
 
                 // Last round to exchange remaining elements if size is not a power of two.
-                const int remaining = recvcount * size - cnt;
                 if (offset < size) {
+                    const int remaining = recvcount * size - cnt;
                     int source = (rank + offset) % size;
                     // + size to avoid negative numbers
                     int target = (rank - offset + size) % size;
@@ -263,12 +263,134 @@ namespace RBC {
                 return 0;
             }
 
-/*
- * AllgatherHypercube: Allgather algorithm with running time
- * O(alpha * log p + beta n log p).  p must be a power of two!!!
- */
-            double AllgatherHypercubeExpRunningTime(Comm const & comm, int sendcount, MPI_Datatype sendtype,
-                    bool* valid) {
+            
+            /* Allgather operation but any process is allowed to choose its own input size.
+             * @param sendcount Number of elements provided by this process
+             * @param recvcount Total number of distributed elements.
+             */
+            int AllgathervDissemination(const void *sendbuf, int sendcount, MPI_Datatype sendtype,
+                    void *recvbuf, int recvcount, MPI_Datatype recvtype,
+                    Comm const &comm) {
+                if (comm.useMPICollectives()) {
+                    return MPI_Allgather(const_cast<void*> (sendbuf),
+                            sendcount, sendtype, recvbuf, recvcount, recvtype,
+                            comm.mpi_comm);
+                }
+
+                int rank, size;
+                Comm_rank(comm, &rank);
+                Comm_size(comm, &size);
+
+                if (recvcount == 0) {
+                    return 0;
+                }
+                
+                MPI_Aint lb, type_size;
+                MPI_Type_get_extent(sendtype, &lb, &type_size);
+                const size_t datatype_size = static_cast<size_t> (type_size);
+                const size_t recv_size = recvcount * datatype_size;
+                const size_t send_size = sendcount * datatype_size;
+
+                if (size == 1) {
+                    // Move local input to output buffer.
+                    memcpy((char*)recvbuf, sendbuf, recv_size);
+
+                    return 0;
+                }
+
+                int count_exscan = 0;
+                RBC::_internal::optimized::Exscan(&sendcount, &count_exscan, 1,
+                        MPI_INT, MPI_SUM, comm);
+
+                char* tmpbuf_arr = new char[recv_size];
+
+                // Move local input to temp buffer.
+                memcpy((char*)tmpbuf_arr, sendbuf, send_size);
+
+                int cnt = sendcount;
+                int offset = 1;
+
+                // First floor(log(p)) rounds with exp increasing msg size.
+                while (offset <= size / 2) {
+                    int source = (rank + offset) % size;
+                    // + size to avoid negative numbers
+                    int target = (rank - offset + size) % size;
+
+                    MPI_Request requests[2];
+                    RBC::Isend(tmpbuf_arr, cnt, sendtype, target, Tag_Const::ALLGATHER, comm, requests);
+
+                    int recv_cnt = 0;
+                    MPI_Status status;
+                    RBC::Probe(source, Tag_Const::ALLGATHER, comm, &status);
+                    MPI_Get_count(&status, sendtype, &recv_cnt);
+                    
+                    RBC::Irecv(tmpbuf_arr + cnt * datatype_size, recv_cnt, recvtype, source, Tag_Const::ALLGATHER, comm, requests + 1);
+
+                    MPI_Waitall(2, requests, MPI_STATUSES_IGNORE);
+
+                    cnt += recv_cnt;
+                    offset *= 2;
+                }
+
+                int remaining = recvcount - cnt;
+                // Last round to exchange remaining elements if size is not a power of two.
+                if (offset < size) {
+                    int source = (rank + offset) % size;
+                    // + size to avoid negative numbers
+                    int target = (rank - offset + size) % size;
+
+                    int remote_remaining = 0;
+                    Sendrecv(&remaining,
+                            1,
+                            MPI_INT,
+                            source,
+                            Tag_Const::ALLGATHER,
+                            &remote_remaining,
+                            1,
+                            MPI_INT,
+                            target,
+                            Tag_Const::ALLGATHER,
+                            comm,
+                            MPI_STATUS_IGNORE);
+
+                    SendrecvNonZeroed(tmpbuf_arr,
+                            remote_remaining,
+                            sendtype,
+                            target,
+                            Tag_Const::ALLGATHER,
+                            tmpbuf_arr + cnt * datatype_size,
+                            remaining,
+                            sendtype,
+                            source,
+                            Tag_Const::ALLGATHER,
+                            comm,
+                            MPI_STATUS_IGNORE);
+                }
+
+                int sendcount_exscan = 0;
+                RBC::_internal::optimized::Exscan(&sendcount, &sendcount_exscan,
+                        1, MPI_INT, MPI_SUM, comm);
+
+                /* Copy data to recvbuf. All PEs but PE 0 have to move their
+                 * data in two steps */
+                if (rank == 0) {
+                    memcpy(recvbuf, tmpbuf_arr, recv_size);
+                } else {
+                    const size_t byte_rotation = sendcount_exscan * datatype_size;
+                    memcpy((char*)recvbuf, tmpbuf_arr + recv_size - byte_rotation, byte_rotation);
+                    memcpy((char*)recvbuf + byte_rotation, tmpbuf_arr, recv_size - byte_rotation);
+                }
+
+                delete[] tmpbuf_arr;
+                return 0;
+            }
+
+            /*
+             * AllgatherHypercube: Allgather algorithm with running time
+             * O(alpha * log p + beta n log p).  p must be a power of two!!!
+             */
+            double AllgatherHypercubeExpRunningTime(Comm const & comm, int sendcount,
+                    MPI_Datatype sendtype, bool* valid) {
 
                 int rank, size;
                 Comm_rank(comm, &rank);

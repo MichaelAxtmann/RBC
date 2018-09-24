@@ -8,6 +8,7 @@
 
 #include "Sort/SQuick.hpp"
 #include "tlx/math.hpp"
+#include "tlx/algorithm.hpp"
 
 #include <mpi.h>
 #include "sstream" /* stringstream */
@@ -84,6 +85,20 @@ int main(int argc, char** argv) {
             MPI_Allgather(send.data(), num_els, type, recv.data(), num_els, type, comm);
             PrintDistributed("AllgatherDissemination: " << std::endl << send << std::endl << recv);
 
+            {
+                std::vector<long> send(rand() % (num_els + 1));
+                int send_cnt = send.size();
+                std::vector<int> sizes(size);
+                RBC::Allgather(&send_cnt, 1, MPI_INT, sizes.data(), 1, MPI_INT, rcomm);
+                std::vector<int> sizes_exscan(size + 1, 0);
+                tlx::exclusive_scan(sizes.begin(), sizes.end(), sizes_exscan.begin(), 0);
+                std::vector<long> recv(sizes_exscan.back());
+                if (recv.size()) MPI_Allgatherv(send.data(), send.size(),
+                        type, recv.data(), sizes.data(), sizes_exscan.data(),
+                        type, comm);
+                PrintDistributed("AllgathervDissemination: " << std::endl << send << std::endl << recv);
+            }
+            
             if (tlx::is_power_of_two(size)) {
                 GenerateData(send, recv);
                 MPI_Allgather(send.data(), num_els, type, recv.data(), num_els, type, comm);
@@ -100,6 +115,17 @@ int main(int argc, char** argv) {
             RBC::_internal::optimized::AllgatherDissemination(send.data(), num_els, type, recv.data(), num_els, type, rcomm);
             PrintDistributed("AllgatherDissemination: " << std::endl << send << std::endl << recv);
 
+            {
+                std::vector<long> send(rand() % (num_els + 1));
+                int send_cnt = send.size();
+                int recv_cnt = 0;
+                RBC::Allreduce(&send_cnt, &recv_cnt, 1, MPI_INT, MPI_SUM, rcomm);
+                std::vector<long> recv(recv_cnt);
+                RBC::_internal::optimized::AllgathervDissemination(send.data(), send.size(),
+                        type, recv.data(), recv.size(), type, rcomm);
+                PrintDistributed("AllgathervDissemination: " << std::endl << send << std::endl << recv);
+            }
+            
             if (tlx::is_power_of_two(size)) {
                 GenerateData(send, recv);
                 RBC::_internal::optimized::AllgatherHypercube(send.data(), num_els, type, recv.data(), num_els, type, rcomm);

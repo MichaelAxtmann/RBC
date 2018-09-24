@@ -352,6 +352,25 @@ namespace RBC {
                     Comm const &comm);
     
             /**
+             * Blocking allgather with equal amount of elements on
+             * each process This method uses the dissemination
+             * algorithm and works with an individual local input size
+             * on each process. The user just have to pass the total
+             * number of elements. This vectorized implementation does
+             * not come with any extra cost.
+             * @param sendbuf Starting address of send buffer
+             * @param sendcount Number of elements in send buffer
+             * @param sendtype MPI datatype of the elements
+             * @param recvbuf Buffer where the gathered elements will be stored (only relevant at root)
+             * @param recvcount Total number of distributed input elements.
+             * @param recvtype MPI datatype of the receive elements
+             * @param comm The Range comm on which the operation is performed
+             */
+            int AllgathervDissemination(const void *sendbuf, int sendcount, MPI_Datatype sendtype,
+                    void *recvbuf, int recvcount, MPI_Datatype recvtype,
+                    Comm const &comm);
+    
+            /**
              * Blocking allgather with equal amount of elements on each process
              * This method uses the hypercube algorithm.
              * @param sendbuf Starting address of send buffer
