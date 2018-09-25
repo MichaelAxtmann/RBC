@@ -7,12 +7,13 @@
  * All rights reserved. Published under the BSD-2 license in the LICENSE file.
  ******************************************************************************/
 
+#include "../RBC.hpp"
+
 #include <mpi.h>
 #include <cmath>
 #include <cstring>
 #include <cassert>
-
-#include "../RBC.hpp"
+#include <memory>
 
 namespace RBC {
 
@@ -28,15 +29,14 @@ namespace RBC {
         MPI_Type_get_extent(datatype, &lb, &type_size);
         int datatype_size = static_cast<int> (type_size);
         int recv_size = count * datatype_size;
-        char *scan_buf = new char[recv_size];
+        std::unique_ptr<char[]> scan_buf = std::make_unique<char[]>(recv_size);
 
-        Exscan(sendbuf, scan_buf, count, datatype, op, comm);
+        Exscan(sendbuf, scan_buf.get(), count, datatype, op, comm);
         char *buf = const_cast<char*> (static_cast<const char*> (sendbuf));
         std::memcpy(recvbuf, buf, recv_size);
         if (rank != 0)
-            MPI_Reduce_local(scan_buf, recvbuf, count, datatype, op);
+            MPI_Reduce_local(scan_buf.get(), recvbuf, count, datatype, op);
 
-        delete[] scan_buf;
         return 0;
     }
 
@@ -62,9 +62,9 @@ namespace RBC {
 
                 if (size == 0) return 0;
 
-                char *tmp_buf = new char[recv_size];
-                char *scan_buf = new char[recv_size];
-                std::memcpy(scan_buf, sendbuf, recv_size);
+                std::unique_ptr<char[]> tmp_buf  = std::make_unique<char[]>(recv_size);
+                std::unique_ptr<char[]> scan_buf = std::make_unique<char[]>(recv_size);
+                std::memcpy(scan_buf.get(), sendbuf, recv_size);
 
                 int commute = 0;
                 MPI_Op_commutative(op, &commute);
@@ -75,12 +75,12 @@ namespace RBC {
                     mask <<= 1;
 
                     if (target < size) {
-                        RBC::Sendrecv(scan_buf,
+                        RBC::Sendrecv(scan_buf.get(),
                                 count,
                                 datatype,
                                 target,
                                 Tag_Const::SCAN,
-                                tmp_buf,
+                                tmp_buf.get(),
                                 count,
                                 datatype,
                                 target,
@@ -90,21 +90,19 @@ namespace RBC {
 
                         const bool left_target = target < rank;
                         if (left_target) {
-                            MPI_Reduce_local(tmp_buf, scan_buf, count, datatype, op);
-                            MPI_Reduce_local(tmp_buf, recvbuf, count, datatype, op);
+                            MPI_Reduce_local(tmp_buf.get(), scan_buf.get(), count, datatype, op);
+                            MPI_Reduce_local(tmp_buf.get(), recvbuf, count, datatype, op);
                         } else {
                             if (commute) {
-                                MPI_Reduce_local(tmp_buf, scan_buf, count, datatype, op);
+                                MPI_Reduce_local(tmp_buf.get(), scan_buf.get(), count, datatype, op);
                             } else {
-                                MPI_Reduce_local(scan_buf, tmp_buf, count, datatype, op);
-                                std::memcpy(scan_buf, tmp_buf, recv_size);
+                                MPI_Reduce_local(scan_buf.get(), tmp_buf.get(), count, datatype, op);
+                                std::memcpy(scan_buf.get(), tmp_buf.get(), recv_size);
                             }
                         }
                     }
                 }
                 
-                delete[] tmp_buf;
-                delete[] scan_buf;
                 return 0;
             }
             
@@ -126,7 +124,7 @@ namespace RBC {
             MPI_Datatype datatype;
             MPI_Op op;
             bool completed, mpi_collective;
-            char *scan_buf;
+            std::unique_ptr<char[]> scan_buf;
             Request req_exscan;
             MPI_Request mpi_req;
         };
@@ -158,13 +156,11 @@ scan_buf(nullptr) {
     MPI_Type_get_extent(datatype, &lb, &type_size);
     datatype_size = static_cast<int> (type_size);
     recv_size = count * datatype_size;
-    scan_buf = new char[recv_size];
-    RBC::Iexscan(sendbuf, scan_buf, count, datatype, op, comm, &req_exscan, tag);
+    scan_buf = std::make_unique<char[]>(recv_size);
+    RBC::Iexscan(sendbuf, scan_buf.get(), count, datatype, op, comm, &req_exscan, tag);
 }
 
 RBC::_internal::IscanReq::~IscanReq() {
-    if (scan_buf != nullptr)
-        delete[] scan_buf;
 }
 
 int RBC::_internal::IscanReq::test(int* flag, MPI_Status* status) {
@@ -182,7 +178,7 @@ int RBC::_internal::IscanReq::test(int* flag, MPI_Status* status) {
         char *buf = const_cast<char*> (static_cast<const char*> (sendbuf));
         std::memcpy(recvbuf, buf, recv_size);
         if (rank != 0)
-            MPI_Reduce_local(scan_buf, recvbuf, count, datatype, op);
+            MPI_Reduce_local(scan_buf.get(), recvbuf, count, datatype, op);
         completed = true;
     }
 

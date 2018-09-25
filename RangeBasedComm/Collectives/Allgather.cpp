@@ -7,15 +7,16 @@
  * All rights reserved. Published under the BSD-2 license in the LICENSE file.
  ******************************************************************************/
 
+#include "../PointToPoint/Sendrecv.hpp"
+#include "../RBC.hpp"
+
 #include <mpi.h>
 #include <cmath>
 #include <iostream>
 #include <cassert>
 #include <cstring>
 #include <algorithm>
-
-#include "../PointToPoint/Sendrecv.hpp"
-#include "../RBC.hpp"
+#include <memory>
 
 namespace RBC {
 
@@ -199,10 +200,10 @@ namespace RBC {
                     return 0;
                 }
 
-                char* tmpbuf_arr = new char[recv_size * size];
+                std::unique_ptr<char[]> tmpbuf_arr = std::make_unique<char[]>(recv_size * size);
 
                 // Move local input to temp buffer.
-                memcpy((char*)tmpbuf_arr, sendbuf, recv_size);
+                memcpy(tmpbuf_arr.get(), sendbuf, recv_size);
 
                 int cnt = recvcount;
                 int offset = 1;
@@ -213,12 +214,12 @@ namespace RBC {
                     // + size to avoid negative numbers
                     int target = (rank - offset + size) % size;
 
-                    SendrecvNonZeroed(tmpbuf_arr,
+                    SendrecvNonZeroed(tmpbuf_arr.get(),
                             cnt,
                             sendtype,
                             target,
                             Tag_Const::ALLGATHER,
-                            tmpbuf_arr + cnt * datatype_size,
+                            tmpbuf_arr.get() + cnt * datatype_size,
                             cnt,
                             sendtype,
                             source,
@@ -237,12 +238,12 @@ namespace RBC {
                     // + size to avoid negative numbers
                     int target = (rank - offset + size) % size;
 
-                    SendrecvNonZeroed(tmpbuf_arr,
+                    SendrecvNonZeroed(tmpbuf_arr.get(),
                             remaining,
                             sendtype,
                             target,
                             Tag_Const::ALLGATHER,
-                            tmpbuf_arr + cnt * datatype_size,
+                            tmpbuf_arr.get() + cnt * datatype_size,
                             remaining,
                             sendtype,
                             source,
@@ -254,13 +255,12 @@ namespace RBC {
                 /* Copy data to recvbuf. All PEs but PE 0 have to move their
                  * data in two steps */
                 if (rank == 0) {
-                    memcpy(recvbuf, tmpbuf_arr, recv_size * size);
+                    memcpy(recvbuf, tmpbuf_arr.get(), recv_size * size);
                 } else {
-                    memcpy((char*)recvbuf + recv_size * rank, tmpbuf_arr, recv_size * (size - rank));
-                    memcpy((char*)recvbuf, tmpbuf_arr + recv_size * (size - rank), recv_size * rank);
+                    memcpy((char*)recvbuf + recv_size * rank, tmpbuf_arr.get(), recv_size * (size - rank));
+                    memcpy((char*)recvbuf, tmpbuf_arr.get() + recv_size * (size - rank), recv_size * rank);
                 }
 
-                delete[] tmpbuf_arr;
                 return 0;
             }
 
@@ -303,10 +303,10 @@ namespace RBC {
                 RBC::_internal::optimized::Exscan(&sendcount, &count_exscan, 1,
                         MPI_INT, MPI_SUM, comm);
 
-                char* tmpbuf_arr = new char[recv_size];
+                std::unique_ptr<char[]> tmpbuf_arr = std::make_unique<char[]>(recv_size);
 
                 // Move local input to temp buffer.
-                memcpy((char*)tmpbuf_arr, sendbuf, send_size);
+                memcpy(tmpbuf_arr.get(), sendbuf, send_size);
 
                 int cnt = sendcount;
                 int offset = 1;
@@ -318,14 +318,14 @@ namespace RBC {
                     int target = (rank - offset + size) % size;
 
                     MPI_Request requests[2];
-                    RBC::Isend(tmpbuf_arr, cnt, sendtype, target, Tag_Const::ALLGATHER, comm, requests);
+                    RBC::Isend(tmpbuf_arr.get(), cnt, sendtype, target, Tag_Const::ALLGATHER, comm, requests);
 
                     int recv_cnt = 0;
                     MPI_Status status;
                     RBC::Probe(source, Tag_Const::ALLGATHER, comm, &status);
                     MPI_Get_count(&status, sendtype, &recv_cnt);
                     
-                    RBC::Irecv(tmpbuf_arr + cnt * datatype_size, recv_cnt, recvtype, source, Tag_Const::ALLGATHER, comm, requests + 1);
+                    RBC::Irecv(tmpbuf_arr.get() + cnt * datatype_size, recv_cnt, recvtype, source, Tag_Const::ALLGATHER, comm, requests + 1);
 
                     MPI_Waitall(2, requests, MPI_STATUSES_IGNORE);
 
@@ -354,12 +354,12 @@ namespace RBC {
                             comm,
                             MPI_STATUS_IGNORE);
 
-                    SendrecvNonZeroed(tmpbuf_arr,
+                    SendrecvNonZeroed(tmpbuf_arr.get(),
                             remote_remaining,
                             sendtype,
                             target,
                             Tag_Const::ALLGATHER,
-                            tmpbuf_arr + cnt * datatype_size,
+                            tmpbuf_arr.get() + cnt * datatype_size,
                             remaining,
                             sendtype,
                             source,
@@ -375,14 +375,13 @@ namespace RBC {
                 /* Copy data to recvbuf. All PEs but PE 0 have to move their
                  * data in two steps */
                 if (rank == 0) {
-                    memcpy(recvbuf, tmpbuf_arr, recv_size);
+                    memcpy(recvbuf, tmpbuf_arr.get(), recv_size);
                 } else {
                     const size_t byte_rotation = sendcount_exscan * datatype_size;
-                    memcpy((char*)recvbuf, tmpbuf_arr + recv_size - byte_rotation, byte_rotation);
-                    memcpy((char*)recvbuf + byte_rotation, tmpbuf_arr, recv_size - byte_rotation);
+                    memcpy((char*)recvbuf, tmpbuf_arr.get() + recv_size - byte_rotation, byte_rotation);
+                    memcpy((char*)recvbuf + byte_rotation, tmpbuf_arr.get(), recv_size - byte_rotation);
                 }
 
-                delete[] tmpbuf_arr;
                 return 0;
             }
             
@@ -424,11 +423,11 @@ namespace RBC {
                     return 0;
                 }
 
-                char* tmpbuf_arr  = new char[recv_size];
-                char* tmpbuf_arr1 = new char[recv_size];
+                std::unique_ptr<char[]> tmpbuf_arr  = std::make_unique<char[]>(recv_size);
+                std::unique_ptr<char[]> tmpbuf_arr1 = std::make_unique<char[]>(recv_size);
 
                 // Move local input to temp buffer.
-                memcpy((char*)tmpbuf_arr, sendbuf, send_size);
+                memcpy(tmpbuf_arr.get(), sendbuf, send_size);
 
                 int cnt = sendcount;
                 int offset = 1;
@@ -440,7 +439,7 @@ namespace RBC {
                     int target = (rank - offset + size) % size;
 
                     MPI_Request requests[2];
-                    RBC::Isend(tmpbuf_arr, cnt, sendtype, target,
+                    RBC::Isend(tmpbuf_arr.get(), cnt, sendtype, target,
                             Tag_Const::ALLGATHER, comm, requests);
 
                     int recv_cnt = 0;
@@ -448,16 +447,16 @@ namespace RBC {
                     RBC::Probe(source, Tag_Const::ALLGATHER, comm, &status);
                     MPI_Get_count(&status, sendtype, &recv_cnt);
                     
-                    RBC::Irecv(tmpbuf_arr + cnt * datatype_size, recv_cnt, recvtype, source,
+                    RBC::Irecv(tmpbuf_arr.get() + cnt * datatype_size, recv_cnt, recvtype, source,
                             Tag_Const::ALLGATHER, comm, requests + 1);
 
                     MPI_Waitall(2, requests, MPI_STATUSES_IGNORE);
                     
-                    merger(tmpbuf_arr,
-                            tmpbuf_arr + cnt * datatype_size,
-                            tmpbuf_arr + cnt * datatype_size,
-                            tmpbuf_arr + cnt * datatype_size + recv_cnt * datatype_size,
-                            tmpbuf_arr1);
+                    merger(tmpbuf_arr.get(),
+                            tmpbuf_arr.get() + cnt * datatype_size,
+                            tmpbuf_arr.get() + cnt * datatype_size,
+                            tmpbuf_arr.get() + cnt * datatype_size + recv_cnt * datatype_size,
+                            tmpbuf_arr1.get());
                     std::swap(tmpbuf_arr, tmpbuf_arr1);
 
                     cnt += recv_cnt;
@@ -485,12 +484,12 @@ namespace RBC {
                             comm,
                             MPI_STATUS_IGNORE);
 
-                    SendrecvNonZeroed(tmpbuf_arr,
+                    SendrecvNonZeroed(tmpbuf_arr.get(),
                             remote_remaining,
                             sendtype,
                             target,
                             Tag_Const::ALLGATHER,
-                            tmpbuf_arr + cnt * datatype_size,
+                            tmpbuf_arr.get() + cnt * datatype_size,
                             remaining,
                             sendtype,
                             source,
@@ -498,11 +497,11 @@ namespace RBC {
                             comm,
                             MPI_STATUS_IGNORE);
                     
-                    merger(tmpbuf_arr,
-                            tmpbuf_arr + cnt * datatype_size,
-                            tmpbuf_arr + cnt * datatype_size,
-                            tmpbuf_arr + recvcount * datatype_size,
-                            tmpbuf_arr1);
+                    merger(tmpbuf_arr.get(),
+                            tmpbuf_arr.get() + cnt * datatype_size,
+                            tmpbuf_arr.get() + cnt * datatype_size,
+                            tmpbuf_arr.get() + recvcount * datatype_size,
+                            tmpbuf_arr1.get());
                     std::swap(tmpbuf_arr, tmpbuf_arr1);
                 }
 
@@ -513,15 +512,13 @@ namespace RBC {
                 /* Copy data to recvbuf. All PEs but PE 0 have to move their
                  * data in two steps */
                 if (rank == 0) {
-                    memcpy(recvbuf, tmpbuf_arr, recv_size);
+                    memcpy(recvbuf, tmpbuf_arr.get(), recv_size);
                 } else {
                     const size_t byte_rotation = sendcount_exscan * datatype_size;
-                    memcpy((char*)recvbuf, tmpbuf_arr + recv_size - byte_rotation, byte_rotation);
-                    memcpy((char*)recvbuf + byte_rotation, tmpbuf_arr, recv_size - byte_rotation);
+                    memcpy((char*)recvbuf, tmpbuf_arr.get() + recv_size - byte_rotation, byte_rotation);
+                    memcpy((char*)recvbuf + byte_rotation, tmpbuf_arr.get(), recv_size - byte_rotation);
                 }
 
-                delete[] tmpbuf_arr;
-                delete[] tmpbuf_arr1;
                 return 0;
             }
 

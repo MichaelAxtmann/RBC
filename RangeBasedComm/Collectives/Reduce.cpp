@@ -7,11 +7,12 @@
  * All rights reserved. Published under the BSD-2 license in the LICENSE file.
  ******************************************************************************/
 
+#include "../RBC.hpp"
+
 #include <mpi.h>
 #include <cmath>
 #include <cstring>
-
-#include "../RBC.hpp"
+#include <memory>
 
 namespace RBC {
 
@@ -39,9 +40,9 @@ namespace RBC {
             for (int i = 0; ((new_rank >> i) % 2 == 1) && (i < height); i++)
                 own_height++;
         }
-        char *recvbuf_arr = new char[recv_size * own_height];
-        char *reduce_buf = new char[recv_size];
-        std::memcpy(reduce_buf, sendbuf, recv_size);
+        std::unique_ptr<char[]> recvbuf_arr = std::make_unique<char[]>(recv_size * own_height);
+        std::unique_ptr<char[]> reduce_buf = std::make_unique<char[]>(recv_size);
+        std::memcpy(reduce_buf.get(), sendbuf, recv_size);
         std::vector<Request> recv_requests;
         recv_requests.reserve(own_height);
 
@@ -55,7 +56,7 @@ namespace RBC {
             if (tmp_src < new_rank) {
                 recv_requests.push_back(Request());
                 int src = (tmp_src + root + 1) % size;
-                Irecv(recvbuf_arr + (recv_requests.size() - 1) * recv_size, count,
+                Irecv(recvbuf_arr.get() + (recv_requests.size() - 1) * recv_size, count,
                         datatype, src,
                         tag, comm, &recv_requests.back());
             } else {
@@ -67,11 +68,11 @@ namespace RBC {
         if (recv_requests.size() > 0) {
             //Reduce received data and local data
             for (size_t i = 0; i < (recv_requests.size() - 1); i++) {
-                MPI_Reduce_local(recvbuf_arr + i * recv_size,
-                        recvbuf_arr + (i + 1) * recv_size, count, datatype, op);
+                MPI_Reduce_local(recvbuf_arr.get() + i * recv_size,
+                        recvbuf_arr.get() + (i + 1) * recv_size, count, datatype, op);
             }
-            MPI_Reduce_local(recvbuf_arr + (recv_requests.size() - 1) * recv_size,
-                    reduce_buf, count, datatype, op);
+            MPI_Reduce_local(recvbuf_arr.get() + (recv_requests.size() - 1) * recv_size,
+                    reduce_buf.get(), count, datatype, op);
         }
 
         //Send data
@@ -80,13 +81,11 @@ namespace RBC {
             if (tmp_dest > size - 1)
                 tmp_dest = size - 1;
             int dest = (tmp_dest + root + 1) % size;
-            Send(reduce_buf, count, datatype, dest, tag, comm);
+            Send(reduce_buf.get(), count, datatype, dest, tag, comm);
         } else {
-            std::memcpy(recvbuf, reduce_buf, recv_size);
+            std::memcpy(recvbuf, reduce_buf.get(), recv_size);
         }
 
-        delete[] recvbuf_arr;
-        delete[] reduce_buf;
         return 0;
     }
 
@@ -110,7 +109,7 @@ namespace RBC {
             MPI_Op op;
             Comm comm;
             bool send, completed, mpi_collective;
-            char *recvbuf_arr, *reduce_buf;
+            std::unique_ptr<char[]> recvbuf_arr, reduce_buf;// todo reduce
             Request send_req;
             std::vector<Request> recv_requests;
             MPI_Request mpi_req;
@@ -154,16 +153,12 @@ mpi_collective(false), recvbuf_arr(nullptr), reduce_buf(nullptr) {
             own_height++;
     }
 
-    recvbuf_arr = new char[recv_size * own_height];
-    reduce_buf = new char[recv_size];
-    std::memcpy(reduce_buf, sendbuf, recv_size);
+    recvbuf_arr = std::make_unique<char[]>(recv_size * own_height);
+    reduce_buf = std::make_unique<char[]>(recv_size);
+    std::memcpy(reduce_buf.get(), sendbuf, recv_size);
 }
 
 RBC::_internal::IreduceReq::~IreduceReq() {
-    if (recvbuf_arr != nullptr)
-        delete[] recvbuf_arr;
-    if (reduce_buf != nullptr)
-        delete[] reduce_buf;
 }
 
 int RBC::_internal::IreduceReq::test(int* flag, MPI_Status* status) {
@@ -186,7 +181,7 @@ int RBC::_internal::IreduceReq::test(int* flag, MPI_Status* status) {
             if (tmp_src < new_rank) {
                 recv_requests.push_back(RBC::Request());
                 int src = (tmp_src + root + 1) % size;
-                RBC::Irecv(recvbuf_arr + (recv_requests.size() - 1) * recv_size, count,
+                RBC::Irecv(recvbuf_arr.get() + (recv_requests.size() - 1) * recv_size, count,
                         datatype, src,
                         tag, comm, &recv_requests.back());
             } else {
@@ -203,11 +198,11 @@ int RBC::_internal::IreduceReq::test(int* flag, MPI_Status* status) {
         if (recv_finished && receives > 0) {
             //Reduce received data and local data
             for (int i = 0; i < (receives - 1); i++) {
-                MPI_Reduce_local(recvbuf_arr + i * recv_size,
-                        recvbuf_arr + (i + 1) * recv_size, count, datatype, op);
+                MPI_Reduce_local(recvbuf_arr.get() + i * recv_size,
+                        recvbuf_arr.get() + (i + 1) * recv_size, count, datatype, op);
             }
-            MPI_Reduce_local(recvbuf_arr + (receives - 1) * recv_size,
-                    reduce_buf, count, datatype, op);
+            MPI_Reduce_local(recvbuf_arr.get() + (receives - 1) * recv_size,
+                    reduce_buf.get(), count, datatype, op);
         }
 
         //Send data
@@ -217,14 +212,14 @@ int RBC::_internal::IreduceReq::test(int* flag, MPI_Status* status) {
                 if (tmp_dest > size - 1)
                     tmp_dest = size - 1;
                 int dest = (tmp_dest + root + 1) % size;
-                RBC::Isend(reduce_buf, count, datatype, dest, tag, comm, &send_req);
+                RBC::Isend(reduce_buf.get(), count, datatype, dest, tag, comm, &send_req);
             }
             send = true;
         }
     }
     if (send) {
         if (new_rank == size - 1) {
-            std::memcpy(recvbuf, reduce_buf, recv_size);
+            std::memcpy(recvbuf, reduce_buf.get(), recv_size);
             *flag = 1;
         } else
             RBC::Test(&send_req, flag, MPI_STATUS_IGNORE);

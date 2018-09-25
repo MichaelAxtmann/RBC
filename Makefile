@@ -5,12 +5,14 @@ CXX_FLAGS = -march=native -std=c++17 -O3 -DNDEBUG -g -Wall
 	
 TARGETDIR = build$(SUBDIR)
 SRCDIR = .
+TESTDIR = ./test
 LIBDIR = lib${SUBDIR}
 TLXDIR = extlib/tlx
 TLXRELEASEDIR = extlib/tlx/Release
 
 SRCDIR_RANGE = $(SRCDIR)/RangeBasedComm
 TARGETDIR_RANGE = $(TARGETDIR)/RBC
+TARGETDIR_TEST = $(TARGETDIR)/test
 	
 extlib/tlx/Release: 
 	mkdir $(TLXRELEASEDIR)
@@ -18,7 +20,7 @@ extlib/tlx/Release:
 tlx: $(TLXRELEASEDIR)
 	$(modules) cd $(TLXRELEASEDIR) && cmake .. -DCMAKE_CXX_COMPILER=$(CXX) && make
 
-all : $(TARGETDIR) $(LIBDIR) $(LIBDIR)/librbc.a $(TARGETDIR)/example $(TARGETDIR)/optimizedcollstest
+all : $(TARGETDIR) $(LIBDIR) $(LIBDIR)/librbc.a $(TARGETDIR)/example $(TARGETDIR_TEST)/test_optimizedcolls
 	
 # Create libraries
 RANGE_OBJ = $(addprefix $(TARGETDIR_RANGE)/,RBC.o Allgather.o Allreduce.o Barrier.o \
@@ -42,27 +44,23 @@ $(TARGETDIR)/Example.o : $(SRCDIR)/example.cpp $(SORT_HEADER)
 	$(CXX) $(CXX_FLAGS) -c -o $@ $<
 	
 # Create the executables	
-OPTIMIZEDCOLLSTEST = $(LIBDIR)/librbc.a $(TLXRELEASEDIR)/tlx/libtlx.a $(TARGETDIR)/Optimizedcollstest.o
-$(TARGETDIR)/optimizedcollstest : $(OPTIMIZEDCOLLSTEST)
-	$(CXX) $(CXX_FLAGS) -o $@ $(OPTIMIZEDCOLLSTEST) -Llib -lrbc -L$(TLXRELEASEDIR)/tlx/ -ltlx
+TEST_OPTIMIZEDCOLLS = $(LIBDIR)/librbc.a $(TLXRELEASEDIR)/tlx/libtlx.a $(TARGETDIR_TEST)/TestOptimizedcolls.o
+$(TARGETDIR_TEST)/test_optimizedcolls : $(TEST_OPTIMIZEDCOLLS)
+	$(CXX) $(CXX_FLAGS) -o $@ $(TEST_OPTIMIZEDCOLLS) -Llib -lrbc -L$(TLXRELEASEDIR)/tlx/ -ltlx
 
-test : $(TARGETDIR)/optimizedcollstest
+test : $(TARGETDIR_TEST)/test_optimizedcolls
 	rm -f out_mpi.log
 	rm -f out_rbc.log
 	touch out_mpi.log
 	touch out_rbc.log
-	for i in 1 2 3 4 5 6 6 7 8 9 10; do mpirun -np $$i $(TARGETDIR)/optimizedcollstest 1; done
-	for i in 1 2 3 4 5 6 6 7 8 9 10; do mpirun -np $$i $(TARGETDIR)/optimizedcollstest 0; done 
+	for i in 1 2 3 4 5 6 6 7 8 9 10; do mpirun -np $$i $(TARGETDIR_TEST)/test_optimizedcolls 1; done
+	for i in 1 2 3 4 5 6 6 7 8 9 10; do mpirun -np $$i $(TARGETDIR_TEST)/test_optimizedcolls 0; done 
 	diff out_mpi.log out_rbc.log
 
-# Compile Optimizedcollstest file
-SORT_HEADER = ${addprefix Sort/, Constants.hpp RequestVector.hpp SQuick.hpp \
-	    SortingDatatype.hpp TbSplitter.hpp} \
-	${addprefix ${SRCDIR}/Sort/SQuick/, DataExchange.hpp PivotSelection.hpp \
-	    QSInterval.hpp QuickSort.hpp SequentialSort.hpp}
-$(TARGETDIR)/Optimizedcollstest.o : $(SRCDIR)/optimizedcollstest.cpp $(SORT_HEADER)
-	$(CXX) $(CXX_FLAGS) -c -o $@ $< -I$(TLXDIR)
-	
+# Compile Test Optimizedcolls file
+$(TARGETDIR_TEST)/TestOptimizedcolls.o : $(TESTDIR)/test_optimizedcolls.cpp $(TARGETDIR_TEST) $(LIBDIR)/librbc.a
+	$(CXX) $(CXX_FLAGS) -c -o $@ $< -I$(TLXDIR) -I$(SRCDIR_RANGE)
+
 # Compile RangeBasedComm source files	
 RANGE_HEADER = $(addprefix $(SRCDIR_RANGE)/,RBC.hpp)
 MPI_RANGED_HEADER = $(addprefix $(SRCDIR_RANGE)/,RangeGroup.hpp)
@@ -86,6 +84,9 @@ $(TARGETDIR) : $(TARGETDIR_RANGE) $(LIBDIR)
 	
 $(LIBDIR) :
 	mkdir -p $(LIBDIR)
+	
+$(TARGETDIR_TEST) :
+	mkdir -p $(TARGETDIR_TEST)
 	
 $(TARGETDIR_RANGE) :
 	mkdir -p $(TARGETDIR_RANGE)/	

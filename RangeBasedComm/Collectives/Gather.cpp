@@ -115,8 +115,9 @@ namespace RBC {
             Send(recv_buf, received, sendtype, dest, tag, comm);
         }
 
-        if (rank != root || recvcounts != nullptr)
+        if (rank != root || recvcounts != nullptr) {
             delete[] recv_buf;
+        }
         return 0;
     }
 

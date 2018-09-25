@@ -6,7 +6,8 @@
  * All rights reserved. Published under the BSD-2 license in the LICENSE file.
 ******************************************************************************/
 
-#include "Sort/SQuick.hpp"
+#include "RBC.hpp"
+
 #include "tlx/math.hpp"
 #include "tlx/algorithm.hpp"
 

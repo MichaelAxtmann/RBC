@@ -7,13 +7,14 @@
  * All rights reserved. Published under the BSD-2 license in the LICENSE file.
  ******************************************************************************/
 
-#include <mpi.h>
-#include <cmath>
-#include <cstring>
-
 #include "../PointToPoint/Sendrecv.hpp"
 #include "../RBC.hpp"
 #include "tlx/math.hpp"
+
+#include <mpi.h>
+#include <cmath>
+#include <cstring>
+#include <memory> /* unique_ptr */
 
 namespace RBC {
 
@@ -155,11 +156,11 @@ namespace RBC {
 
                 if (size == 1) return 0;
 
-                char* tmpbuf = new char[recv_size];
+                std::unique_ptr<char[]> tmpbuf = std::make_unique<char[]>(recv_size);
 
                 /* Handle power of two case */
 
-                AnyProcCountToPowOfTwoReducer(recvbuf, tmpbuf, count, datatype,
+                AnyProcCountToPowOfTwoReducer(recvbuf, tmpbuf.get(), count, datatype,
                         op, comm);
 
                 const int lpo2 = tlx::round_down_to_power_of_two(size);
@@ -192,7 +193,7 @@ namespace RBC {
                                     datatype,
                                     phys_target,
                                     Tag_Const::ALLREDUCE,
-                                    tmpbuf,
+                                    tmpbuf.get(),
                                     right_count,
                                     datatype,
                                     phys_target,
@@ -201,7 +202,7 @@ namespace RBC {
                                     MPI_STATUS_IGNORE);
 
                             recvbuf_ptr += left_count * datatype_size;
-                            MPI_Reduce_local(tmpbuf,
+                            MPI_Reduce_local(tmpbuf.get(),
                                     recvbuf_ptr, right_count, datatype, op);
                             rem_size -= left_count;
                         } else {
@@ -210,7 +211,7 @@ namespace RBC {
                                     datatype,
                                     phys_target,
                                     Tag_Const::ALLREDUCE,
-                                    tmpbuf,
+                                    tmpbuf.get(),
                                     left_count,
                                     datatype,
                                     phys_target,
@@ -218,7 +219,7 @@ namespace RBC {
                                     comm,
                                     MPI_STATUS_IGNORE);
 
-                            MPI_Reduce_local(tmpbuf,
+                            MPI_Reduce_local(tmpbuf.get(),
                                     recvbuf_ptr, left_count, datatype, op);
                             rem_size -= right_count;
                         }
@@ -267,8 +268,6 @@ namespace RBC {
 
                 /* Handle non power of two case */
                 ScatterToPowOfTwoProcs(recvbuf, count, rank, size, datatype, comm);
-
-                delete[] tmpbuf;
 
                 return 0;
             }
@@ -327,11 +326,11 @@ namespace RBC {
 
                 if (size == 1) return 0;
 
-                char* tmpbuf = new char[recv_size];
+                std::unique_ptr<char[]> tmpbuf = std::make_unique<char[]>(recv_size);
 
                 /* Handle power of two case */
 
-                AnyProcCountToPowOfTwoReducer(recvbuf, tmpbuf, count, datatype,
+                AnyProcCountToPowOfTwoReducer(recvbuf, tmpbuf.get(), count, datatype,
                         op, comm);
 
                 const int lpo2 = tlx::round_down_to_power_of_two(size);
@@ -356,7 +355,7 @@ namespace RBC {
                                     datatype,
                                     phys_target,
                                     Tag_Const::ALLREDUCE,
-                                    tmpbuf,
+                                    tmpbuf.get(),
                                     count,
                                     datatype,
                                     phys_target,
@@ -364,7 +363,7 @@ namespace RBC {
                                     comm,
                                     MPI_STATUS_IGNORE);
 
-                            MPI_Reduce_local(tmpbuf,
+                            MPI_Reduce_local(tmpbuf.get(),
                                     recvbuf, count, datatype, op);
                         } else {
                             Sendrecv(recvbuf,
@@ -372,7 +371,7 @@ namespace RBC {
                                     datatype,
                                     phys_target,
                                     Tag_Const::ALLREDUCE,
-                                    tmpbuf,
+                                    tmpbuf.get(),
                                     count,
                                     datatype,
                                     phys_target,
@@ -380,7 +379,7 @@ namespace RBC {
                                     comm,
                                     MPI_STATUS_IGNORE);
 
-                            MPI_Reduce_local(tmpbuf,
+                            MPI_Reduce_local(tmpbuf.get(),
                                     recvbuf, count, datatype, op);
                         }
                     }
@@ -388,8 +387,6 @@ namespace RBC {
 
                 /* Handle non power of two case */
                 ScatterToPowOfTwoProcs(recvbuf, count, rank, size, datatype, comm);
-
-                delete[] tmpbuf;
 
                 return 0;
             }
