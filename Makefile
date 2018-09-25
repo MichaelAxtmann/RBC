@@ -8,7 +8,7 @@ SRCDIR = .
 TESTDIR = ./test
 LIBDIR = lib${SUBDIR}
 TLXDIR = extlib/tlx
-TLXRELEASEDIR = extlib/tlx/Release
+TLXRELEASEDIR = extlib/tlx/build$(SUBDIR)
 
 SRCDIR_RANGE = $(SRCDIR)/RangeBasedComm
 TARGETDIR_RANGE = $(TARGETDIR)/RBC
@@ -27,7 +27,7 @@ RANGE_OBJ = $(addprefix $(TARGETDIR_RANGE)/,RBC.o Allgather.o Allreduce.o Barrie
 	AllreduceTwotree.o ScanTwotree.o ScanAndBcastTwotree.o Twotree.o Bcast.o \
 	Exscan.o Gather.o Recv.o Reduce.o Scan.o ScanAndBcast.o Send.o \
 	Sendrecv.o) 
-$(LIBDIR)/librbc.a : tlx $(RANGE_OBJ)
+$(LIBDIR)/librbc.a : $(TARGETDIR) $(LIBDIR) tlx $(RANGE_OBJ)
 	ar rcs $@ $(RANGE_OBJ)
 	
 # Create the executables	
@@ -78,6 +78,9 @@ $(TARGETDIR_RANGE)/%.o : $(SRCDIR_RANGE)/PointToPoint/%.cpp $(RANGE_HEADER)
 clean : 
 	rm -rf $(TARGETDIR)
 	rm -rf $(TLXRELEASEDIR)
+
+$(TLXRELEASEDIR) :
+	mkdir -p $(TLXRELEASEDIR)
 
 $(TARGETDIR) : $(TARGETDIR_RANGE) $(LIBDIR)
 	mkdir -p $(TARGETDIR)
