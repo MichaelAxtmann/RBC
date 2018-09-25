@@ -386,10 +386,12 @@ namespace RBC {
             }
             
             /* Allgather-merge operation. Any process is allowed to choose its own input size.
+             * Warning: equal elements may differ in their order on different processes!
+             *
              * @param sendcount Number of elements provided by this process
              * @param recvcount Total number of distributed elements.
              */
-            int AllgathervDissemination(const void *sendbuf, int sendcount, MPI_Datatype sendtype,
+            int AllgathervMergeDissemination(const void *sendbuf, int sendcount, MPI_Datatype sendtype,
                     void *recvbuf, int recvcount, MPI_Datatype recvtype,
                     Comm const &comm,
                     void (*merger)(

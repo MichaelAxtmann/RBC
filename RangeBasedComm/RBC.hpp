@@ -365,6 +365,8 @@ namespace RBC {
                     Comm const &comm);
     
             /* Allgather-merge operation. Any process is allowed to choose its own input size.
+             * Warning: equal elements may differ in their order on different processes!
+             *
              * @param sendbuf Starting address of send buffer
              * @param sendcount Number of elements provided by this process
              * @param sendtype MPI datatype of the elements
@@ -374,7 +376,7 @@ namespace RBC {
              * @param comm The Range comm on which the operation is performed
              * #param merger binary-merge algorithm
              */
-            int AllgathervDissemination(const void *sendbuf, int sendcount, MPI_Datatype sendtype,
+            int AllgathervMergeDissemination(const void *sendbuf, int sendcount, MPI_Datatype sendtype,
                     void *recvbuf, int recvcount, MPI_Datatype recvtype,
                     Comm const &comm,
                     void (*merger)(
