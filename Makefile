@@ -76,8 +76,9 @@ $(TARGETDIR_RANGE)/%.o : $(SRCDIR_RANGE)/PointToPoint/%.cpp $(RANGE_HEADER)
 
 # Directories
 clean : 
-	rm -rf $(TARGETDIR)
-	rm -rf $(TLXRELEASEDIR)
+	rm -rf $(TARGETDIR)*
+	rm -rf $(LIBDIR)*
+	rm -rf $(TLXRELEASEDIR)*
 
 $(TLXRELEASEDIR) :
 	mkdir -p $(TLXRELEASEDIR)
