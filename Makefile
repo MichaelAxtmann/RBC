@@ -1,6 +1,9 @@
 CXX = mpic++
 CXX_FLAGS = -march=native -std=c++17 -O3 -DNDEBUG -g -Wall
 
+# SuperMUC requires /bin/bash to provide function 'module'
+SHELL=/bin/bash
+
 .PHONY: rebuild all clean
 	
 TARGETDIR = build$(SUBDIR)
