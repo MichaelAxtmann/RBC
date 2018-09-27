@@ -113,6 +113,7 @@ int main(int argc, char** argv) {
                 std::vector<int> sizes_exscan(size + 1, 0);
                 tlx::exclusive_scan(sizes.begin(), sizes.end(), sizes_exscan.begin(), 0);
                 std::vector<long> recv(sizes_exscan.back());
+                GenerateData(send, recv);
                 if (recv.size()) MPI_Allgatherv(send.data(), send.size(),
                         type, recv.data(), sizes.data(), sizes_exscan.data(),
                         type, comm);
@@ -128,10 +129,12 @@ int main(int argc, char** argv) {
                 std::vector<int> sizes_exscan(size + 1, 0);
                 tlx::exclusive_scan(sizes.begin(), sizes.end(), sizes_exscan.begin(), 0);
                 std::vector<long> recv(sizes_exscan.back());
+                GenerateData(send, recv);
                 if (recv.size()) MPI_Allgatherv(send.data(), send.size(),
                         type, recv.data(), sizes.data(), sizes_exscan.data(),
                         type, comm);
                 std::sort(recv.begin(), recv.end(), std::less<>());
+                std::sort(send.begin(), send.end(), std::less<>());
                 PrintDistributed("AllgathervMergeDissemination: " << std::endl << send << std::endl << recv);
             }
         
@@ -157,6 +160,7 @@ int main(int argc, char** argv) {
                 int recv_cnt = 0;
                 RBC::Allreduce(&send_cnt, &recv_cnt, 1, MPI_INT, MPI_SUM, rcomm);
                 std::vector<long> recv(recv_cnt);
+                GenerateData(send, recv);
                 RBC::_internal::optimized::AllgathervDissemination(send.data(), send.size(),
                         type, recv.data(), recv.size(), type, rcomm);
                 PrintDistributed("AllgathervDissemination: " << std::endl << send << std::endl << recv);
@@ -170,7 +174,9 @@ int main(int argc, char** argv) {
                 RBC::Allreduce(&send_cnt, &recv_cnt, 1, MPI_INT, MPI_SUM, rcomm);
                 std::vector<long> recv(recv_cnt);
 
-                RBC::_internal::optimized::AllgathervDissemination(send.data(), send.size(),
+                GenerateData(send, recv);
+                std::sort(send.begin(), send.end(), std::less<>());
+                RBC::_internal::optimized::AllgathervMergeDissemination(send.data(), send.size(),
                         type, recv.data(), recv.size(), type, rcomm,
                         merge);
                 PrintDistributed("AllgathervMergeDissemination: " << std::endl << send << std::endl << recv);
