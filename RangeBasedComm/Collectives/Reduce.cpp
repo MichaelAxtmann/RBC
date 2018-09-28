@@ -31,59 +31,63 @@ namespace RBC {
         int datatype_size = static_cast<int> (type_size);
         int recv_size = count * datatype_size;
 
-        int new_rank = (rank - root - 1 + size) % size;
-        int height = std::ceil(std::log2(size));
-        int own_height = 0;
-        if (new_rank == (size - 1)) {
-            own_height = height;
-        } else {
-            for (int i = 0; ((new_rank >> i) % 2 == 1) && (i < height); i++)
-                own_height++;
+        int root_rank = (rank - root + size) % size;
+
+        if (size == 1) {
+            std::memcpy(recvbuf, sendbuf, recv_size);
+            return 0;
         }
-        std::unique_ptr<char[]> recvbuf_arr = std::make_unique<char[]>(recv_size * own_height);
-        std::unique_ptr<char[]> reduce_buf = std::make_unique<char[]>(recv_size);
-        std::memcpy(reduce_buf.get(), sendbuf, recv_size);
-        std::vector<Request> recv_requests;
-        recv_requests.reserve(own_height);
 
-        //Receive data
-        int tmp_rank = new_rank;
-        if (new_rank == size - 1)
-            tmp_rank = std::pow(2, height) - 1;
+        std::unique_ptr<char[]> recvbuf_arr = std::make_unique<char[]>(2 * recv_size);
+        std::unique_ptr<char[]> tmp_arr = std::make_unique<char[]>(recv_size);
 
-        for (int i = own_height - 1; i >= 0; i--) {
-            int tmp_src = tmp_rank - std::pow(2, i);
-            if (tmp_src < new_rank) {
-                recv_requests.push_back(Request());
-                int src = (tmp_src + root + 1) % size;
-                Irecv(recvbuf_arr.get() + (recv_requests.size() - 1) * recv_size, count,
-                        datatype, src,
-                        tag, comm, &recv_requests.back());
-            } else {
-                tmp_rank = tmp_src;
+        std::memcpy(tmp_arr.get(), sendbuf, recv_size);
+
+        // Perform first receive operation if appropriate.
+        int src = root_rank ^ 1;
+        bool second_buffer = false;
+        bool is_recved = false;
+        // Level of the tree. We start with level 1 as we have already executed level 0 if
+        // appropriate.
+        int i = 0;
+        if (src > root_rank) {
+            if (src < size) {
+                int root_src = (src + root) % size;
+                RBC::Recv(recvbuf_arr.get(), count, datatype, root_src, tag,
+                        comm, MPI_STATUS_IGNORE);
+                is_recved = true;
+                second_buffer = true;
+            }
+            i++;
+        }
+
+        MPI_Request request;
+        while ((root_rank ^ (1 << i)) > root_rank) {
+            src = root_rank ^ (1 << i);
+            i++;
+            if (src < size) {
+                int root_src = (src + root) % size;
+                // Receive and reduce at the same time -> overlapping.
+                RBC::Irecv(recvbuf_arr.get() + recv_size * (size_t)second_buffer, count, datatype, root_src, tag, comm, &request);
+                MPI_Reduce_local(recvbuf_arr.get() + recv_size * (size_t)(!second_buffer),
+                        tmp_arr.get(), count, datatype, op);
+                MPI_Wait(&request, MPI_STATUS_IGNORE);
+                second_buffer = !second_buffer;
             }
         }
-        Waitall(recv_requests.size(), &recv_requests.front(), MPI_STATUSES_IGNORE);
 
-        if (recv_requests.size() > 0) {
-            //Reduce received data and local data
-            for (size_t i = 0; i < (recv_requests.size() - 1); i++) {
-                MPI_Reduce_local(recvbuf_arr.get() + i * recv_size,
-                        recvbuf_arr.get() + (i + 1) * recv_size, count, datatype, op);
-            }
-            MPI_Reduce_local(recvbuf_arr.get() + (recv_requests.size() - 1) * recv_size,
-                    reduce_buf.get(), count, datatype, op);
+        if (is_recved) {
+            MPI_Reduce_local(recvbuf_arr.get() + recv_size * (size_t)(!second_buffer),
+                    tmp_arr.get(), count, datatype, op);
         }
 
         //Send data
-        if (new_rank < size - 1) {
-            int tmp_dest = new_rank + std::pow(2, own_height);
-            if (tmp_dest > size - 1)
-                tmp_dest = size - 1;
-            int dest = (tmp_dest + root + 1) % size;
-            Send(reduce_buf.get(), count, datatype, dest, tag, comm);
+        if (root_rank > 0) {
+            int dest = root_rank ^ (1 << i);
+            int root_dest = (dest + root) % size;
+            Send(tmp_arr.get(), count, datatype, root_dest, tag, comm);
         } else {
-            std::memcpy(recvbuf, reduce_buf.get(), recv_size);
+            std::memcpy(recvbuf, tmp_arr.get(), recv_size);
         }
 
         return 0;
