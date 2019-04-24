@@ -1,332 +1,516 @@
 /*****************************************************************************
- * This file is part of the Project SchizophrenicQuicksort
- * 
+ * This file is part of the Project JanusSortRBC
+ *
  * Copyright (c) 2018, Michael Axtmann <michael.axtmann@kit.edu>
  *
  * All rights reserved. Published under the BSD-2 license in the LICENSE file.
 ******************************************************************************/
 
+#include "sstream"
+#include <algorithm>
+#include <cstdlib>
+#include <functional>
+#include <mpi.h>
+#include <random>
+#include <stdlib.h>
+#include <vector>
+
 #include "RBC.hpp"
 
-#include "tlx/math.hpp"
 #include "tlx/algorithm.hpp"
+#include "tlx/math.hpp"
 
-#include <mpi.h>
-#include "sstream" /* stringstream */
-#include <random>
-#include <vector>
-#include <stdlib.h> /* srand, rand */
-#include <cstdlib>
-#include <algorithm> /* merge */
-#include <functional> /* less */
-
-#define PRINT_ROOT(msg) if (rank == 0) std::cout << msg << std::endl;
+// #define PRINT_ROOT(msg) if (rank == 0) std::cout << msg << std::endl;
+#define PRINT_ROOT(msg) ;
 
 template <typename T>
 std::ostream& operator<< (std::ostream& out, const std::vector<T>& v) {
-  if ( !v.empty() ) {
+  if (!v.empty()) {
     out << '[';
-    std::copy (v.begin(), v.end(), std::ostream_iterator<T>(out, ", "));
+    std::copy(v.begin(), v.end(), std::ostream_iterator<T>(out, ", "));
     out << "]";
   }
   return out;
 }
 
 void GenerateData(std::vector<long>& send, std::vector<long>& recv) {
-    for (size_t idx = 0; idx != send.size(); ++idx) {
-        send[idx] = rand();
-    }    
-    for (size_t idx = 0; idx != recv.size(); ++idx) {
-        recv[idx] = 0;
-    }    
+  for (size_t idx = 0; idx != send.size(); ++idx) {
+    send[idx] = rand();
+  }
+  for (size_t idx = 0; idx != recv.size(); ++idx) {
+    recv[idx] = 0;
+  }
 }
 
-#define PrintDistributed(string)                                                                           \
-    {std::stringstream buffer;                                          \
-    buffer << rank << ": " << string << "\n";                              \
-    MPI_File_write_ordered( fh, buffer.str().c_str(), buffer.str().size(), MPI_CHAR, MPI_STATUS_IGNORE );}
+#define PrintDistributed(string)              \
+  { std::stringstream buffer;                 \
+    buffer << rank << ": " << string << "\n"; \
+    MPI_File_write_ordered(fh, buffer.str().c_str(), buffer.str().size(), MPI_CHAR, MPI_STATUS_IGNORE); }
 
 void merge(const void* begin1, const void* end1,
-        const void* begin2, const void* end2,
-        void* out) { 
-    std::merge<const long*, const long*, long*>((const long*) begin1, (const long*) end1,
-            (const long*) begin2, (const long*) end2, (long*) out, std::less<long>());
-} 
+           const void* begin2, const void* end2,
+           void* out) {
+  std::merge<const long*, const long*, long*>(static_cast<const long*>(begin1), static_cast<const long*>(end1),
+                                              static_cast<const long*>(begin2), static_cast<const long*>(end2), static_cast<long*>(out), std::less<long>());
+}
 
 
 int main(int argc, char** argv) {
-    // Initialize the MPI environment
-    MPI_Init(&argc, &argv);
-    MPI_Comm comm = MPI_COMM_WORLD;
-    int rank, size;
-    MPI_Comm_rank(comm, &rank);
-    MPI_Comm_size(comm, &size);
+  // Initialize the MPI environment
+  MPI_Init(&argc, &argv);
+  MPI_Comm comm = MPI_COMM_WORLD;
+  int rank, size;
+  MPI_Comm_rank(comm, &rank);
+  MPI_Comm_size(comm, &size);
 
-    if (argc != 2) {
-        std::cout << "Error: We expect a single argument. "
-                  << "Pass 0 for MPI and pass 1 for RBC." << std::endl;
+  if (argc != 3) {
+    std::cout << "Error: We expect two arguments. " << std::endl
+              << "First argument: Pass 0 for MPI and pass 1 for RBC." << std::endl
+              << "Second argument: Input size." << std::endl;
+  }
+  RBC::Comm rcomm;
+  RBC::Create_Comm_from_MPI(comm, &rcomm);
+
+  bool mpi = atoi(argv[1]);
+  int el_cnt = atoi(argv[2]);
+
+  MPI_File fh;
+  int err = 0;
+  if (mpi) {
+    err = MPI_File_open(comm, "out_mpi.log", MPI_MODE_WRONLY, MPI_INFO_NULL, &fh);
+  } else {
+    err = MPI_File_open(comm, "out_rbc.log", MPI_MODE_WRONLY, MPI_INFO_NULL, &fh);
+  }
+  if (err) {
+    MPI_Abort(MPI_COMM_WORLD, 911);
+  }
+
+  srand(rank + 1);
+
+  MPI_Datatype type = MPI_LONG;
+
+  std::vector<long> send(el_cnt);
+  std::vector<long> recv(el_cnt* size);
+
+  PRINT_ROOT("Iallgather");
+  if (mpi) {
+    std::vector<long> send(el_cnt);
+    std::vector<long> recv(el_cnt* size);
+
+    GenerateData(send, recv);
+
+    RBC::Comm mpi_comm;
+    RBC::Create_Comm_from_MPI(MPI_COMM_WORLD, &mpi_comm, true, true, true);
+    RBC::Request request;
+    RBC::Iallgather(send.data(), send.size(), type, recv.data(), send.size(), type, mpi_comm, &request);
+    RBC::Wait(&request, MPI_STATUS_IGNORE);
+    PrintDistributed("Iallgather: " << std::endl << send << std::endl << recv);
+  } else {
+    std::vector<long> send(el_cnt);
+    std::vector<long> recv(el_cnt* size);
+
+    GenerateData(send, recv);
+
+    RBC::Request request;
+    RBC::Iallgather(send.data(), send.size(), type, recv.data(), send.size(), type, rcomm, &request);
+    RBC::Wait(&request, MPI_STATUS_IGNORE);
+    PrintDistributed("Iallgather: " << std::endl << send << std::endl << recv);
+  }
+
+  PRINT_ROOT("Allgatherv");
+  if (mpi) {
+    std::vector<long> send(el_cnt + rank);
+    std::vector<long> recv(el_cnt* size + (size - 1) * size / 2);
+
+    std::vector<int> recvcnts(size);
+    for (size_t i = 0; i != size; ++i) {
+      recvcnts[i] = el_cnt + i;
     }
-    RBC::Comm rcomm;
-    RBC::Create_Comm_from_MPI(comm, &rcomm);
 
-    bool mpi = atoi(argv[1]);
+    std::vector<int> displs(size + 1);
+    tlx::exclusive_scan(recvcnts.begin(), recvcnts.end(), displs.begin(), 0, std::plus<>{ });
 
-    MPI_File fh;
-    int err = 0;
-    if (mpi) {
-        err = MPI_File_open( comm, "out_mpi.log", MPI_MODE_WRONLY, MPI_INFO_NULL, &fh );
-    } else {
-        err = MPI_File_open( comm, "out_rbc.log", MPI_MODE_WRONLY, MPI_INFO_NULL, &fh );
-    }        
-    if (err)
+    GenerateData(send, recv);
+
+    RBC::Comm mpi_comm;
+    RBC::Create_Comm_from_MPI(MPI_COMM_WORLD, &mpi_comm, true, true, true);
+    RBC::Allgatherv(send.data(), send.size(), type, recv.data(), recvcnts.data(), displs.data(), type, mpi_comm);
+    PrintDistributed("Allgatherv: " << std::endl << send << std::endl << recv);
+  } else {
+    std::vector<long> send(el_cnt + rank);
+    std::vector<long> recv(el_cnt* size + (size - 1) * size / 2);
+
+    std::vector<int> recvcnts(size);
+    for (size_t i = 0; i != size; ++i) {
+      recvcnts[i] = el_cnt + i;
+    }
+
+    std::vector<int> displs(size + 1);
+    tlx::exclusive_scan(recvcnts.begin(), recvcnts.end(), displs.begin(), 0, std::plus<>{ });
+
+    GenerateData(send, recv);
+
+    RBC::Allgatherv(send.data(), send.size(), type, recv.data(), recvcnts.data(), displs.data(), type, rcomm);
+    PrintDistributed("Allgatherv: " << std::endl << send << std::endl << recv);
+  }
+
+  PRINT_ROOT("Iallgatherv");
+  if (mpi) {
+    std::vector<long> send(el_cnt + rank);
+    std::vector<long> recv(el_cnt* size + (size - 1) * size / 2);
+
+    std::vector<int> recvcnts(size);
+    for (size_t i = 0; i != size; ++i) {
+      recvcnts[i] = el_cnt + i;
+    }
+
+    std::vector<int> displs(size + 1);
+    tlx::exclusive_scan(recvcnts.begin(), recvcnts.end(), displs.begin(), 0, std::plus<>{ });
+
+    GenerateData(send, recv);
+
+    RBC::Comm mpi_comm;
+    RBC::Create_Comm_from_MPI(MPI_COMM_WORLD, &mpi_comm, true, true, true);
+    RBC::Request request;
+    RBC::Iallgatherv(send.data(), send.size(), type, recv.data(), recvcnts.data(), displs.data(), type, mpi_comm, &request);
+    RBC::Wait(&request, MPI_STATUS_IGNORE);
+    PrintDistributed("Iallgatherv: " << std::endl << send << std::endl << recv);
+  } else {
+    std::vector<long> send(el_cnt + rank);
+    std::vector<long> recv(el_cnt* size + (size - 1) * size / 2);
+
+    std::vector<int> recvcnts(size);
+    for (size_t i = 0; i != size; ++i) {
+      recvcnts[i] = el_cnt + i;
+    }
+
+    std::vector<int> displs(size + 1);
+    tlx::exclusive_scan(recvcnts.begin(), recvcnts.end(), displs.begin(), 0, std::plus<>{ });
+
+    GenerateData(send, recv);
+
+    RBC::Request request;
+    RBC::Iallgatherv(send.data(), send.size(), type, recv.data(), recvcnts.data(), displs.data(), type, rcomm, &request);
+    RBC::Wait(&request, MPI_STATUS_IGNORE);
+    PrintDistributed("Iallgatherv: " << std::endl << send << std::endl << recv);
+  }
+
+  PRINT_ROOT("Allgatherm");
+  if (mpi) {
+    std::vector<long> send(el_cnt + rank);
+    std::vector<long> recv(el_cnt* size + (size - 1) * size / 2);
+
+    std::vector<int> recvcnts(size);
+    for (size_t i = 0; i != size; ++i) {
+      recvcnts[i] = el_cnt + i;
+    }
+
+    std::vector<int> displs(size + 1);
+    tlx::exclusive_scan(recvcnts.begin(), recvcnts.end(), displs.begin(), 0, std::plus<>{ });
+
+    GenerateData(send, recv);
+
+    auto merger = [](void* begin1, void* end1, void* begin2, void* end2, void* result) {
+                    // todo out of place merging?
+                    std::merge((long*)begin1, (long*)end1, (long*)begin2, (long*)end2, (long*)result);
+                  };
+
+    RBC::Comm mpi_comm;
+    RBC::Create_Comm_from_MPI(MPI_COMM_WORLD, &mpi_comm, true, true, true);
+    RBC::Allgatherm(send.data(), send.size(), type, recv.data(), recv.size(), merger, mpi_comm);
+    PrintDistributed("Allgatherm: " << std::endl << send << std::endl << recv);
+  } else {
+    std::vector<long> send(el_cnt + rank);
+    std::vector<long> recv(el_cnt* size + (size - 1) * size / 2);
+
+    std::vector<int> recvcnts(size);
+    for (size_t i = 0; i != size; ++i) {
+      recvcnts[i] = el_cnt + i;
+    }
+
+    std::vector<int> displs(size + 1);
+    tlx::exclusive_scan(recvcnts.begin(), recvcnts.end(), displs.begin(), 0, std::plus<>{ });
+
+    GenerateData(send, recv);
+
+    auto merger = [](void* begin1, void* end1, void* begin2, void* end2, void* result) {
+                    // todo out of place merging?
+                    std::merge((long*)begin1, (long*)end1, (long*)begin2, (long*)end2, (long*)result);
+                  };
+
+    RBC::Allgatherm(send.data(), send.size(), type, recv.data(), recv.size(), merger, rcomm);
+    PrintDistributed("Allgatherm: " << std::endl << send << std::endl << recv);
+  }
+
+  PRINT_ROOT("Iallgatherm");
+  if (mpi) {
+    std::vector<long> send(el_cnt + rank);
+    std::vector<long> recv(el_cnt* size + (size - 1) * size / 2);
+
+    std::vector<int> recvcnts(size);
+    for (size_t i = 0; i != size; ++i) {
+      recvcnts[i] = el_cnt + i;
+    }
+
+    std::vector<int> displs(size + 1);
+    tlx::exclusive_scan(recvcnts.begin(), recvcnts.end(), displs.begin(), 0, std::plus<>{ });
+
+    GenerateData(send, recv);
+
+    auto merger = [](void* begin1, void* end1, void* begin2, void* end2, void* result) {
+                    // todo out of place merging?
+                    std::merge((long*)begin1, (long*)end1, (long*)begin2, (long*)end2, (long*)result);
+                  };
+
+    RBC::Comm mpi_comm;
+    RBC::Create_Comm_from_MPI(MPI_COMM_WORLD, &mpi_comm, true, true, true);
+    RBC::Request request;
+    RBC::Iallgatherm(send.data(), send.size(), type, recv.data(), recv.size(), merger, mpi_comm, &request);
+    RBC::Wait(&request, MPI_STATUS_IGNORE);
+    PrintDistributed("Iallgatherm: " << std::endl << send << std::endl << recv);
+  } else {
+    std::vector<long> send(el_cnt + rank);
+    std::vector<long> recv(el_cnt* size + (size - 1) * size / 2);
+
+    std::vector<int> recvcnts(size);
+    for (size_t i = 0; i != size; ++i) {
+      recvcnts[i] = el_cnt + i;
+    }
+
+    std::vector<int> displs(size + 1);
+    tlx::exclusive_scan(recvcnts.begin(), recvcnts.end(), displs.begin(), 0, std::plus<>{ });
+
+    GenerateData(send, recv);
+
+    auto merger = [](void* begin1, void* end1, void* begin2, void* end2, void* result) {
+                    // todo out of place merging?
+                    std::merge((long*)begin1, (long*)end1, (long*)begin2, (long*)end2, (long*)result);
+                  };
+
+    RBC::Request request;
+    RBC::Iallgatherm(send.data(), send.size(), type, recv.data(), recv.size(), merger, rcomm, &request);
+    RBC::Wait(&request, MPI_STATUS_IGNORE);
+    PrintDistributed("Iallgatherm: " << std::endl << send << std::endl << recv);
+  }
+
+  PRINT_ROOT("Allgather");
+  if (mpi) {
+    GenerateData(send, recv);
+    MPI_Allgather(send.data(), el_cnt, type, recv.data(), el_cnt, type, comm);
+    PrintDistributed("AllgatherDissemination: " << std::endl << send << std::endl << recv);
+
+    if (tlx::is_power_of_two(size)) {
+      GenerateData(send, recv);
+      MPI_Allgather(send.data(), el_cnt, type, recv.data(), el_cnt, type, comm);
+      PrintDistributed("AllgatherHypercube: " << std::endl << send << std::endl << recv);
+    }
+
+    GenerateData(send, recv);
+    MPI_Allgather(send.data(), el_cnt, type, recv.data(), el_cnt, type, comm);
+    PrintDistributed("AllgatherPipeline: " << std::endl << send << std::endl << recv);
+
     {
-        MPI_Abort(MPI_COMM_WORLD, 911);
+      std::vector<long> sendv(rand() % (el_cnt + 1));
+      int send_cnt = sendv.size();
+      std::vector<int> sizes(size);
+      RBC::Allgather(&send_cnt, 1, MPI_INT, sizes.data(), 1, MPI_INT, rcomm);
+      std::vector<int> sizes_exscan(size + 1, 0);
+      tlx::exclusive_scan(sizes.begin(), sizes.end(), sizes_exscan.begin(), 0);
+      std::vector<long> recvv(sizes_exscan.back());
+      GenerateData(sendv, recvv);
+      if (recvv.size()) MPI_Allgatherv(sendv.data(), sendv.size(),
+                                       type, recvv.data(), sizes.data(), sizes_exscan.data(),
+                                       type, comm);
+      PrintDistributed("AllgathervDissemination: " << std::endl << sendv << std::endl << recvv);
+    }
+  } else {
+    GenerateData(send, recv);
+    RBC::_internal::optimized::AllgatherDissemination(send.data(), el_cnt, type, recv.data(), el_cnt, type, rcomm);
+    PrintDistributed("AllgatherDissemination: " << std::endl << send << std::endl << recv);
+
+    if (tlx::is_power_of_two(size)) {
+      GenerateData(send, recv);
+      RBC::_internal::optimized::AllgatherHypercube(send.data(), el_cnt, type, recv.data(), el_cnt, type, rcomm);
+      PrintDistributed("AllgatherHypercube: " << std::endl << send << std::endl << recv);
     }
 
-    srand(rank + 1);
+    GenerateData(send, recv);
+    RBC::_internal::optimized::AllgatherPipeline(send.data(), el_cnt, type, recv.data(), el_cnt, type, rcomm);
+    PrintDistributed("AllgatherPipeline: " << std::endl << send << std::endl << recv);
 
-    MPI_Datatype type = MPI_LONG;
-    for (int num_els = 0; num_els != 50; ++num_els) {
-        std::vector<long> send(num_els);
-        std::vector<long> recv(num_els * size);
-
-        if (mpi) {
-            GenerateData(send, recv);
-            MPI_Allgather(send.data(), num_els, type, recv.data(), num_els, type, comm);
-            PrintDistributed("AllgatherDissemination: " << std::endl << send << std::endl << recv);
-            
-            if (tlx::is_power_of_two(size)) {
-                GenerateData(send, recv);
-                MPI_Allgather(send.data(), num_els, type, recv.data(), num_els, type, comm);
-                PrintDistributed("AllgatherHypercube: " << std::endl << send << std::endl << recv);
-            }
-
-            GenerateData(send, recv);
-            MPI_Allgather(send.data(), num_els, type, recv.data(), num_els, type, comm);
-            PrintDistributed("AllgatherPipeline: " << std::endl << send << std::endl << recv);
-
-            {
-                std::vector<long> send(rand() % (num_els + 1));
-                int send_cnt = send.size();
-                std::vector<int> sizes(size);
-                RBC::Allgather(&send_cnt, 1, MPI_INT, sizes.data(), 1, MPI_INT, rcomm);
-                std::vector<int> sizes_exscan(size + 1, 0);
-                tlx::exclusive_scan(sizes.begin(), sizes.end(), sizes_exscan.begin(), 0);
-                std::vector<long> recv(sizes_exscan.back());
-                GenerateData(send, recv);
-                if (recv.size()) MPI_Allgatherv(send.data(), send.size(),
-                        type, recv.data(), sizes.data(), sizes_exscan.data(),
-                        type, comm);
-                PrintDistributed("AllgathervDissemination: " << std::endl << send << std::endl << recv);
-            }
-
-            // Allgatherv-merge
-            {
-                std::vector<long> send(rand() % (num_els + 1));
-                int send_cnt = send.size();
-                std::vector<int> sizes(size);
-                RBC::Allgather(&send_cnt, 1, MPI_INT, sizes.data(), 1, MPI_INT, rcomm);
-                std::vector<int> sizes_exscan(size + 1, 0);
-                tlx::exclusive_scan(sizes.begin(), sizes.end(), sizes_exscan.begin(), 0);
-                std::vector<long> recv(sizes_exscan.back());
-                GenerateData(send, recv);
-                if (recv.size()) MPI_Allgatherv(send.data(), send.size(),
-                        type, recv.data(), sizes.data(), sizes_exscan.data(),
-                        type, comm);
-                std::sort(recv.begin(), recv.end(), std::less<>());
-                std::sort(send.begin(), send.end(), std::less<>());
-                PrintDistributed("AllgathervMergeDissemination: " << std::endl << send << std::endl << recv);
-            }
-        
-        } else {
-
-            GenerateData(send, recv);
-            RBC::_internal::optimized::AllgatherDissemination(send.data(), num_els, type, recv.data(), num_els, type, rcomm);
-            PrintDistributed("AllgatherDissemination: " << std::endl << send << std::endl << recv);
-            
-            if (tlx::is_power_of_two(size)) {
-                GenerateData(send, recv);
-                RBC::_internal::optimized::AllgatherHypercube(send.data(), num_els, type, recv.data(), num_els, type, rcomm);
-                PrintDistributed("AllgatherHypercube: " << std::endl << send << std::endl << recv);
-            }
-                
-            GenerateData(send, recv);
-            RBC::_internal::optimized::AllgatherPipeline(send.data(), num_els, type, recv.data(), num_els, type, rcomm);
-            PrintDistributed("AllgatherPipeline: " << std::endl << send << std::endl << recv);
-
-            {
-                std::vector<long> send(rand() % (num_els + 1));
-                int send_cnt = send.size();
-                int recv_cnt = 0;
-                RBC::Allreduce(&send_cnt, &recv_cnt, 1, MPI_INT, MPI_SUM, rcomm);
-                std::vector<long> recv(recv_cnt);
-                GenerateData(send, recv);
-                RBC::_internal::optimized::AllgathervDissemination(send.data(), send.size(),
-                        type, recv.data(), recv.size(), type, rcomm);
-                PrintDistributed("AllgathervDissemination: " << std::endl << send << std::endl << recv);
-            }
-
-            // Allgatherv-merge
-            {
-                std::vector<long> send(rand() % (num_els + 1));
-                int send_cnt = send.size();
-                int recv_cnt = 0;
-                RBC::Allreduce(&send_cnt, &recv_cnt, 1, MPI_INT, MPI_SUM, rcomm);
-                std::vector<long> recv(recv_cnt);
-
-                GenerateData(send, recv);
-                std::sort(send.begin(), send.end(), std::less<>());
-                RBC::_internal::optimized::AllgathervMergeDissemination(send.data(), send.size(),
-                        type, recv.data(), recv.size(), type, rcomm,
-                        merge);
-                PrintDistributed("AllgathervMergeDissemination: " << std::endl << send << std::endl << recv);
-            }
-
-        }
-
-        if (mpi) {
-            GenerateData(send, recv);
-            MPI_Allreduce(send.data(), recv.data(), num_els, type, MPI_SUM, comm);
-            PrintDistributed("AllreduceScatterAllgather: " << std::endl << send << std::endl << recv);
-
-            GenerateData(send, recv);
-            MPI_Allreduce(send.data(), recv.data(), num_els, type, MPI_SUM, comm);
-            PrintDistributed("AllreduceHypercube: " << std::endl << send << std::endl << recv);
-        
-        } else {
-
-            GenerateData(send, recv);
-            RBC::_internal::optimized::AllreduceScatterAllgather(send.data(), recv.data(), num_els, type, MPI_SUM, rcomm);
-            PrintDistributed("AllreduceScatterAllgather: " << std::endl << send << std::endl << recv);
-
-            GenerateData(send, recv);
-            RBC::_internal::optimized::AllreduceHypercube(send.data(), recv.data(), num_els, type, MPI_SUM, rcomm);
-            PrintDistributed("AllreduceHypercube: " << std::endl << send << std::endl << recv);
-
-        }
-
-        if (mpi) {
-            GenerateData(send, recv);
-            MPI_Scan(send.data(), recv.data(), num_els, type, MPI_SUM, comm);
-            PrintDistributed("Scan: " << std::endl << send << std::endl << recv);
-        } else {
-
-            GenerateData(send, recv);
-            RBC::_internal::optimized::Scan(send.data(), recv.data(), num_els, type, MPI_SUM, rcomm);
-            PrintDistributed("Scan: " << std::endl << send << std::endl << recv);
-        }
-
-        if (mpi) {
-            GenerateData(send, recv);
-            MPI_Exscan(send.data(), recv.data(), num_els, type, MPI_SUM, comm);
-            PrintDistributed("Exscan: " << std::endl << send << std::endl << recv);
-        } else {
-
-            GenerateData(send, recv);
-            RBC::_internal::optimized::Exscan(send.data(), recv.data(), num_els, type, MPI_SUM, rcomm);
-            PrintDistributed("Exscan: " << std::endl << send << std::endl << recv);
-        }
-
-        for (int root = 0; root != size; ++root) {
-            if (mpi) {
-                GenerateData(send, recv);
-                MPI_Bcast(send.data(), num_els, type, root, comm);
-                PrintDistributed("BcastBinomial: " << std::endl << send << std::endl << recv);
-
-                GenerateData(send, recv);
-                MPI_Bcast(send.data(), num_els, type, root, comm);
-                PrintDistributed("BcastScatterAllgather: " << std::endl << send << std::endl << recv);
-        
-            } else {
-
-                GenerateData(send, recv);
-                RBC::_internal::optimized::BcastBinomial(send.data(), num_els, type, root, rcomm);
-                PrintDistributed("BcastBinomial: " << std::endl << send << std::endl << recv);
-
-                GenerateData(send, recv);
-                RBC::_internal::optimized::BcastScatterAllgather(send.data(), num_els, type, root, rcomm);
-                PrintDistributed("BcastScatterAllgather: " << std::endl << send << std::endl << recv);
-
-            }
-        }
+    {
+      std::vector<long> sendv(rand() % (el_cnt + 1));
+      int send_cnt = sendv.size();
+      int recv_cnt = 0;
+      RBC::Allreduce(&send_cnt, &recv_cnt, 1, MPI_INT, MPI_SUM, rcomm);
+      std::vector<long> recvv(recv_cnt);
+      GenerateData(sendv, recvv);
+      RBC::_internal::optimized::AllgathervDissemination(sendv.data(), sendv.size(),
+                                                         type, recvv.data(), recvv.size(), type, rcomm);
+      PrintDistributed("AllgathervDissemination: " << std::endl << sendv << std::endl << recvv);
     }
+  }
 
-    // // Scan
-    // {
-    //     std::vector<size_t> send{0, 1, 2, 3};
-    //     std::vector<size_t> recv(4, 0);
+  PRINT_ROOT("(All)reduce");
+  if (mpi) {
+    GenerateData(send, recv);
+    MPI_Allreduce(send.data(), recv.data(), el_cnt, type, MPI_SUM, comm);
+    PrintDistributed("AllreduceScatterAllgather: " << std::endl << send << std::endl << recv);
 
-    //     PRINT_ROOT("Start Allreduce test");
-    //     RBC::Comm rcomm;
-    //     RBC::Create_Comm_from_MPI(comm, &rcomm);
+    GenerateData(send, recv);
+    MPI_Allreduce(send.data(), recv.data(), el_cnt, type, MPI_SUM, comm);
+    PrintDistributed("AllreduceHypercube: " << std::endl << send << std::endl << recv);
 
-    //     // RBC::_internal::optimized::AllreduceScatterAllgather(send.data(), recv.data(), send.size(), MPI_UNSIGNED_LONG, MPI_SUM, rcomm);
-    //     RBC::_internal::optimized::Scan(send.data(), recv.data(), send.size(), MPI_UNSIGNED_LONG, MPI_SUM, rcomm);
+    GenerateData(send, recv);
+    MPI_Allreduce(send.data(), recv.data(), el_cnt, type, MPI_SUM, comm);
+    PrintDistributed("AllreduceTwotree: " << std::endl << send << std::endl << recv);
 
-    //     std::cout << "rank " << rank << ": " << recv << std::endl;
-    // }    
+    GenerateData(send, recv);
+    MPI_Allreduce(send.data(), recv.data(), el_cnt, type, MPI_SUM, comm);
+    PrintDistributed("ScanAndBcast: " << std::endl << send << std::endl << recv);
 
-    // // Exscan
-    // {
-    //     std::vector<size_t> send{0, 1, 2, 3};
-    //     std::vector<size_t> recv(4, 0);
+    for (int root = 0; root != size; ++root) {
+      GenerateData(send, recv);
+      MPI_Reduce(send.data(), recv.data(), el_cnt, type, MPI_SUM, root, comm);
+      PrintDistributed("ReduceTwotree: " << std::endl << send << std::endl << recv);
+    }
+  } else {
+    PRINT_ROOT("scatter");
+    GenerateData(send, recv);
+    RBC::_internal::optimized::AllreduceScatterAllgather(send.data(), recv.data(), el_cnt, type, MPI_SUM, rcomm);
+    PrintDistributed("AllreduceScatterAllgather: " << std::endl << send << std::endl << recv);
 
-    //     PRINT_ROOT("Start Allreduce test");
-    //     RBC::Comm rcomm;
-    //     RBC::Create_Comm_from_MPI(comm, &rcomm);
+    PRINT_ROOT("hyper");
+    GenerateData(send, recv);
+    RBC::_internal::optimized::AllreduceHypercube(send.data(), recv.data(), el_cnt, type, MPI_SUM, rcomm);
+    PrintDistributed("AllreduceHypercube: " << std::endl << send << std::endl << recv);
 
-    //     // RBC::_internal::optimized::AllreduceScatterAllgather(send.data(), recv.data(), send.size(), MPI_UNSIGNED_LONG, MPI_SUM, rcomm);
-    //     RBC::_internal::optimized::Exscan(send.data(), recv.data(), send.size(), MPI_UNSIGNED_LONG, MPI_SUM, rcomm);
+    PRINT_ROOT("twotree");
+    GenerateData(send, recv);
+    RBC::_internal::optimized::AllreduceTwotree(send.data(), recv.data(), el_cnt, type, MPI_SUM, rcomm);
+    PrintDistributed("AllreduceTwotree: " << std::endl << send << std::endl << recv);
 
-    //     std::cout << "rank " << rank << ": " << recv << std::endl;
-    // }       
+    PRINT_ROOT("twotree");
+    GenerateData(send, recv);
+    auto scan = recv;
+    RBC::ScanAndBcast(send.data(), scan.data(), recv.data(), el_cnt, type, MPI_SUM, rcomm);
+    PrintDistributed("ScanAndBcast: " << std::endl << send << std::endl << recv);
 
-    // // Bcast
-    // {
-    //     int root = 3;
-    //     std::vector<size_t> send{4, 3, 2, 1};
-    //     if (rank != root) {
-    //         send = std::vector<size_t>(send.size(), 0);
-    //     }
-        
-    //     PRINT_ROOT("Start broadcast test");
-    //     RBC::Comm rcomm;
-    //     RBC::Create_Comm_from_MPI(comm, &rcomm);
+    for (int root = 0; root != size; ++root) {
+      PRINT_ROOT("reduce twotree");
+      GenerateData(send, recv);
+      RBC::_internal::optimized::ReduceTwotree(send.data(), recv.data(), el_cnt, type, MPI_SUM, root, rcomm);
+      PrintDistributed("ReduceTwotree: " << std::endl << send << std::endl << recv);
+    }
+  }
 
-    //     RBC::_internal::optimized::BcastScatterAllgather(send.data(), send.size(), MPI_UNSIGNED_LONG,
-    //             root, rcomm);
+  PRINT_ROOT("Scan");
+  if (mpi) {
+    GenerateData(send, recv);
+    MPI_Scan(send.data(), recv.data(), el_cnt, type, MPI_SUM, comm);
+    PrintDistributed("Scan: " << std::endl << send << std::endl << recv);
 
-    // }        
-    
-    // // Create random input elements
-    // PRINT_ROOT("Create random input elements");
-    // std::mt19937 generator;
-    // int data_seed = 3469931 + rank;
-    // generator.seed(data_seed);
-    // std::uniform_real_distribution<double> dist(-100.0, 100.0);
-    // std::vector<double> data;
-    // for (int i = 0; i < 10; ++i)
-    //     data.push_back(dist(generator));
-    // int global_elements = 10 * size;
-    
-    // // Sort data descending
-    // PRINT_ROOT("Start sorting algorithm with MPI_Comm");
-    // SQuick::sort(comm, data, global_elements, std::greater<double>());
-    // PRINT_ROOT("Elements have been sorted");
-    
-    // PRINT_ROOT("Start sorting algorithm with RBC::Comm");
-    // RBC::Comm rcomm;
-    // RBC::Create_Comm_from_MPI(comm, &rcomm);
-    // SQuick::sort(rcomm, data, global_elements, std::greater<double>());
-    // PRINT_ROOT("Elements have been sorted");
+    GenerateData(send, recv);
+    MPI_Scan(send.data(), recv.data(), el_cnt, type, MPI_SUM, comm);
+    PrintDistributed("Iscan: " << std::endl << send << std::endl << recv);
 
-    // PRINT_ROOT("Start sorting algorithm with RBC::Comm " <<
-    //            "but use MPI communicators and collectives");
-    // RBC::Comm rcomm1;
-    // RBC::Create_Comm_from_MPI(comm, &rcomm1, true, true);
-    // SQuick::sort(rcomm1, data, global_elements, std::greater<double>());
-    // PRINT_ROOT("Elements have been sorted");
+    GenerateData(send, recv);
+    MPI_Scan(send.data(), recv.data(), el_cnt, type, MPI_SUM, comm);
+    PrintDistributed("ScanOptimized: " << std::endl << send << std::endl << recv);
 
-    // Finalize the MPI environment
-    MPI_Finalize();
+    GenerateData(send, recv);
+    MPI_Scan(send.data(), recv.data(), el_cnt, type, MPI_SUM, comm);
+    PrintDistributed("ScanTwotree: " << std::endl << send << std::endl << recv);
+
+    GenerateData(send, recv);
+    MPI_Scan(send.data(), recv.data(), el_cnt, type, MPI_SUM, comm);
+    PrintDistributed("ScanAndBcast: " << std::endl << send << std::endl << recv);
+  } else {
+    GenerateData(send, recv);
+    RBC::Scan(send.data(), recv.data(), el_cnt, type, MPI_SUM, rcomm);
+    PrintDistributed("Scan: " << std::endl << send << std::endl << recv);
+
+    GenerateData(send, recv);
+    RBC::Request req;
+    RBC::Iscan(send.data(), recv.data(), el_cnt, type, MPI_SUM, rcomm, &req);
+    RBC::Wait(&req, MPI_STATUS_IGNORE);
+    PrintDistributed("Iscan: " << std::endl << send << std::endl << recv);
+
+    GenerateData(send, recv);
+    RBC::_internal::optimized::Scan(send.data(), recv.data(), el_cnt, type, MPI_SUM, rcomm);
+    PrintDistributed("ScanOptimized: " << std::endl << send << std::endl << recv);
+
+    GenerateData(send, recv);
+    RBC::_internal::optimized::ScanTwotree(send.data(), recv.data(), el_cnt, type, MPI_SUM, rcomm);
+    PrintDistributed("ScanTwotree: " << std::endl << send << std::endl << recv);
+
+    GenerateData(send, recv);
+    auto bcast = recv;
+    RBC::ScanAndBcast(send.data(), recv.data(), bcast.data(), el_cnt, type, MPI_SUM, rcomm);
+    PrintDistributed("ScanAndBcast: " << std::endl << send << std::endl << recv);
+  }
+
+  PRINT_ROOT("Exscan");
+  if (mpi) {
+    GenerateData(send, recv);
+    MPI_Exscan(send.data(), recv.data(), el_cnt, type, MPI_SUM, comm);
+    PrintDistributed("Exscan: " << std::endl << send << std::endl << recv);
+
+    GenerateData(send, recv);
+    MPI_Exscan(send.data(), recv.data(), el_cnt, type, MPI_SUM, comm);
+    PrintDistributed("Iexscan: " << std::endl << send << std::endl << recv);
+
+    GenerateData(send, recv);
+    MPI_Exscan(send.data(), recv.data(), el_cnt, type, MPI_SUM, comm);
+    PrintDistributed("ExscanOptimized: " << std::endl << send << std::endl << recv);
+  } else {
+    GenerateData(send, recv);
+    RBC::Exscan(send.data(), recv.data(), el_cnt, type, MPI_SUM, rcomm);
+    PrintDistributed("Exscan: " << std::endl << send << std::endl << recv);
+
+    GenerateData(send, recv);
+    RBC::Request req;
+    RBC::Iexscan(send.data(), recv.data(), el_cnt, type, MPI_SUM, rcomm, &req);
+    RBC::Wait(&req, MPI_STATUS_IGNORE);
+    PrintDistributed("Iexscan: " << std::endl << send << std::endl << recv);
+
+    GenerateData(send, recv);
+    RBC::_internal::optimized::Exscan(send.data(), recv.data(), el_cnt, type, MPI_SUM, rcomm);
+    PrintDistributed("ExscanOptimized: " << std::endl << send << std::endl << recv);
+  }
+
+  PRINT_ROOT("twotree");
+  GenerateData(send, recv);
+  RBC::_internal::optimized::ReduceTwotree(send.data(), recv.data(), el_cnt, type, MPI_SUM, 2, rcomm);
+  PRINT_ROOT("Bcast");
+  for (int root = 0; root != size; ++root) {
+    if (mpi) {
+      GenerateData(send, recv);
+      MPI_Bcast(send.data(), el_cnt, type, root, comm);
+      PrintDistributed("BcastBinomial: " << std::endl << send << std::endl << recv);
+
+      GenerateData(send, recv);
+      MPI_Bcast(send.data(), el_cnt, type, root, comm);
+      PrintDistributed("BcastScatterAllgather: " << std::endl << send << std::endl << recv);
+
+      GenerateData(send, recv);
+      MPI_Bcast(send.data(), el_cnt, type, root, comm);
+      PrintDistributed("BcastTwotree: " << std::endl << send << std::endl << recv);
+    } else {
+      GenerateData(send, recv);
+      RBC::_internal::optimized::BcastBinomial(send.data(), el_cnt, type, root, rcomm);
+      PrintDistributed("BcastBinomial: " << std::endl << send << std::endl << recv);
+
+      GenerateData(send, recv);
+      RBC::_internal::optimized::BcastScatterAllgather(send.data(), el_cnt, type, root, rcomm);
+      PrintDistributed("BcastScatterAllgather: " << std::endl << send << std::endl << recv);
+
+      GenerateData(send, recv);
+      RBC::_internal::optimized::BcastTwotree(send.data(), el_cnt, type, root, rcomm);
+      PrintDistributed("BcastTwotree: " << std::endl << send << std::endl << recv);
+    }
+  }
+
+  // Finalize the MPI environment
+  MPI_Finalize();
 }

@@ -1,0 +1,8 @@
+function(add_database_to_rtags file)
+  message("-- Add database ${file} to rtags")
+  EXECUTE_PROCESS(COMMAND rc "-J${file}" OUTPUT_VARIABLE OUTPUT ERROR_VARIABLE OUTPUT)
+  if (NOT "${OUTPUT}" STREQUAL "")
+    message("${OUTPUT}")
+  endif()
+  message("-- Done")
+endfunction()
