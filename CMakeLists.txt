@@ -14,6 +14,19 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
+###########################
+# cpplint and uncrustify  #
+###########################
+
+# test for target to avoid conflicts with parent projects
+if (NOT TARGET AnalyzeModifiedSources)
+  add_custom_target(AnalyzeModifiedSources  perl "${PROJECT_SOURCE_DIR}/codestyle/analyze-source.pl" "-w")
+endif()
+
+if (NOT TARGET AnalyzeAllSources)
+add_custom_target(AnalyzeAllSources  perl "${PROJECT_SOURCE_DIR}/codestyle/analyze-source.pl" "-aw")
+endif()
+
 ########################################################
 ## External libraries
 ########################################################
@@ -160,13 +173,6 @@ elseif ("${CLUSTER_TYPE}" STREQUAL "JUQUEEN")
   target_compile_definitions(rbc PRIVATE "RBC_ALPHA=3.54439e-06")
   message(STATUS "Set model parameters: DRBC_BETA=5.63185e-10 DRBC_ALPHA=3.54439e-06")
 endif()
-
-###########################
-# cpplint and uncrustify  #
-###########################
-
-add_custom_target(AnalyzeModifiedSources  perl "${PROJECT_SOURCE_DIR}/codestyle/analyze-source.pl" "-w")
-add_custom_target(AnalyzeAllSources  perl "${PROJECT_SOURCE_DIR}/codestyle/analyze-source.pl" "-aw")
 
 
 ###########################
