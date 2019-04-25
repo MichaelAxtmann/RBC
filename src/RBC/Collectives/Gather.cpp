@@ -1,5 +1,5 @@
 /*****************************************************************************
- * this file is part of the Project RBCn
+ * this file is part of the Project RBC
 
  *
  * Copyright (c) 2016-2017, Armin Wiebigke <armin.wiebigke@gmail.com>
@@ -29,9 +29,11 @@
 #include "tlx/math.hpp"
 
 
+namespace RBC {
+
 int Gather(const void* sendbuf, int sendcount, MPI_Datatype sendtype,
            void* recvbuf, int recvcount, MPI_Datatype recvtype,
-           int root, RBC::Comm& comm) {
+           int root, RBC::Comm const& comm) {
 #ifndef NO_IBAST
   if (comm.useMPICollectives()) {
     return MPI_Gather(const_cast<void*>(sendbuf), sendcount, sendtype, recvbuf, recvcount, recvtype,
@@ -112,7 +114,6 @@ int Gather(const void* sendbuf, int sendcount, MPI_Datatype sendtype,
   return 0;
 }
 
-namespace RBC {
 namespace _internal {
 /*
  * Request for the gather
@@ -141,4 +142,159 @@ class IgatherReq : public RequestSuperclass {
   MPI_Request m_mpi_req;
 };
 }  // namespace _internal
+
+int Igather(const void *sendbuf, int sendcount, MPI_Datatype sendtype,
+        void *recvbuf, int recvcount, MPI_Datatype recvtype,
+        int root, Comm const &comm, Request* request, int tag) {
+  request->set(std::make_shared<_internal::IgatherReq>(sendbuf, sendcount,
+                  sendtype, recvbuf, recvcount, recvtype, root,
+                  tag, comm));
+  return 0;
+};
 }  // namespace RBC
+
+RBC::_internal::IgatherReq::IgatherReq(const void *sendbuf, int sendcount,
+        MPI_Datatype sendtype, void *recvbuf, int recvcount,
+        MPI_Datatype recvtype, int root, int tag,
+        RBC::Comm const &comm)
+    : m_sendbuf(sendbuf)
+    , m_recvbuf(recvbuf)
+    , m_sendcount(sendcount)
+    , m_recvcount(recvcount)
+    , m_root(root)
+    , m_tag(tag)
+    , m_own_height(0)
+    , m_size(0)
+    , m_rank(0)
+    , m_height(1)
+    , m_received(0)
+    , m_count(0)
+    , m_sendtype(sendtype)
+    , m_recvtype(recvtype)
+    , m_comm(comm)
+    , m_receive(false)
+    , m_send(false)
+    , m_completed(false)
+    , m_mpi_collective(false)
+    , m_recv_buf(nullptr) {
+#ifndef HAS_NO_MPI_3_SUPPORT
+    if (comm.useMPICollectives()) {
+        // todo 
+        MPI_Igather(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype,
+                root, comm.get(), &m_mpi_req);
+        m_mpi_collective = true;
+        return;
+    }
+#endif
+
+    RBC::Comm_rank(comm, &m_rank);
+    RBC::Comm_size(comm, &m_size);
+
+    m_new_rank = (m_rank - root + m_size) % m_size;
+    int max_height = tlx::integer_log2_ceil(m_size);
+    if (std::pow(2, max_height) < m_size)
+        max_height++;
+    for (int i = 0; ((m_new_rank >> i) % 2 == 0) && (i < max_height); i++)
+        m_own_height++;
+
+    MPI_Aint lb, recv_size, send_size;
+    MPI_Type_get_extent(recvtype, &lb, &recv_size);
+    MPI_Type_get_extent(sendtype, &lb, &send_size);
+    m_recvtype_size = static_cast<int> (recv_size);
+    m_sendtype_size = static_cast<int> (send_size);
+
+    int subtree_size = static_cast<int> (std::min(std::pow(2, m_own_height),
+            static_cast<double> (m_size)));
+    assert(sendcount == recvcount); // TODO: different send and recv types
+    assert(m_sendtype_size == m_recvtype_size);
+    m_total_recvcount = subtree_size * recvcount;
+    recv_size = m_total_recvcount * m_recvtype_size;
+    if (m_rank == root) {
+        m_recv_buf = static_cast<char*>(recvbuf);
+    } else {
+        m_recv_buf = new char[recv_size];
+    }
+    //Copy send data into receive buffer
+    std::memcpy(m_recv_buf, sendbuf, sendcount * m_sendtype_size);
+    m_received = sendcount;
+};
+
+RBC::_internal::IgatherReq::~IgatherReq() {
+    if ((m_rank != m_root) && m_recv_buf != nullptr)
+        delete[] m_recv_buf;
+}
+
+int RBC::_internal::IgatherReq::test(int *flag, MPI_Status *status) {
+    if (m_completed) {
+        *flag = 1;
+        return 0;
+    }
+
+    if (m_mpi_collective)
+        return MPI_Test(&m_mpi_req, flag, status);
+
+    //If messages have to be received
+    if (m_height <= m_own_height) {
+        if (!m_receive) {
+            int tmp_src = m_new_rank + std::pow(2, m_height - 1);
+            if (tmp_src < m_size) {
+                int src = (tmp_src + m_root) % m_size;
+                //Range::Test if message can be received
+                MPI_Status probe_status;
+                int ready;
+                RBC::Iprobe(src, m_tag, m_comm, &ready, &probe_status);
+                if (ready) {
+                    //Receive message with non-blocking receive
+                    MPI_Get_count(&probe_status, m_sendtype, &m_count);
+                    RBC::Irecv(m_recv_buf + m_received * m_sendtype_size, m_count,
+                            m_sendtype, src, m_tag, m_comm, &m_recv_req);
+                    m_receive = true;
+                }
+            } else {
+                //Source rank larger than comm size
+                m_height++;
+            }
+        }
+        if (m_receive) {
+            //Range::Test if receive finished
+            int finished;
+            RBC::Test(&m_recv_req, &finished, MPI_STATUS_IGNORE);
+            if (finished) {
+                //Merge the received data
+                m_received += m_count;
+                m_height++;
+                m_receive = false;
+            }
+        }
+    }
+
+    //If all messages have been received
+    if (m_height > m_own_height) {
+        if (m_rank == m_root) {
+            //root doesn't send to anyone
+            m_completed = true;
+            //            if (total_recvcount != received)
+            //            std::cout << W(rank) << W(size) << W(total_recvcount) << W(received) << std::endl;
+            assert(m_total_recvcount == m_received);
+        } else {
+            if (!m_send) {
+                //Start non-blocking send to parent node
+                int tmp_dest = m_new_rank - std::pow(2, m_height - 1);
+                int dest = (tmp_dest + m_root) % m_size;
+                RBC::Isend(m_recv_buf, m_received, m_sendtype, dest, m_tag, m_comm, &m_send_req);
+                //                std::cout << W(rank) << W(dest) << W(received) << W(total_recvcount) << std::endl;
+                m_send = true;
+            }
+            //Gather is completed when the send is finished
+            int finished;
+            RBC::Test(&m_send_req, &finished, MPI_STATUS_IGNORE);
+            if (finished)
+                m_completed = true;
+        }
+    }
+
+    if (m_completed)
+        *flag = 1;
+    return 0;
+
+}
