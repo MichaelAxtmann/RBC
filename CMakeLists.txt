@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.4)
+cmake_minimum_required(VERSION 3.9.4)
 
 project(RBC)
 
@@ -39,7 +39,8 @@ set(TLX_LIBRARIES tlx)
 ## Flags
 ########################################################
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 ## enable warnings
 
@@ -83,7 +84,8 @@ file(GLOB RBC_SRCS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
  src/RBC/*.cpp
  )
 
-add_library(rbc STATIC ${RBC_SRCS})
+# Build shared library to inherit mpi wrapper from parent targets
+add_library(rbc SHARED ${RBC_SRCS})
 target_link_libraries(rbc tlx)
 
 file(GLOB RBC_INCLUDES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}

@@ -26,8 +26,9 @@ int Barrier(Comm const& comm) {
   if (comm.useMPICollectives()) {
     return MPI_Barrier(comm.get());
   }
-  int a = 0, b = 0, c = 0;
-  ScanAndBcast(&a, &b, &c, 1, MPI_INT, MPI_SUM, comm);
+  int a = 0, b = 0;
+  RBC::Reduce(&a, &b, 1, MPI_INT, MPI_SUM, 0, comm);
+  RBC::Bcast( &a, 1, MPI_INT, 0, comm );
   return 0;
 }
 
