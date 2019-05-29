@@ -56,7 +56,7 @@ int Exscan(const void* sendbuf, void* recvbuf, int count, MPI_Datatype datatype,
 
   int msg_cnt = 0;
   std::unique_ptr<char[]> tmpbuf;
-  RBC::Request requests[2];
+  MPI_Request requests[2];
 
   if (rank + 1 < size) {
     RBC::Isend(sendbuf, count, datatype, rank + 1, tag, comm, requests);
@@ -71,7 +71,7 @@ int Exscan(const void* sendbuf, void* recvbuf, int count, MPI_Datatype datatype,
     ++msg_cnt;
   }
 
-  RBC::Waitall(msg_cnt, requests, MPI_STATUSES_IGNORE);
+  MPI_Waitall(msg_cnt, requests, MPI_STATUSES_IGNORE);
 
   if (size == 2) {
     return 0;

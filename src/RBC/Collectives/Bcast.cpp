@@ -347,7 +347,7 @@ class IbcastReq : public RequestSuperclass {
   Comm m_comm;
   bool m_send, m_completed, m_mpi_collective;
   Request m_recv_req;
-  std::vector<Request> m_req_vector;
+  std::vector<MPI_Request> m_req_vector;
   MPI_Request m_mpi_req;
 };
 }  // namespace _internal
@@ -418,7 +418,7 @@ int RBC::_internal::IbcastReq::test(int* flag, MPI_Status* status) {
         int temp_dest = temp_rank + std::pow(2, m_height - 1);
         if (temp_dest < m_size) {
           int dest = (temp_dest + m_root) % m_size;
-          m_req_vector.push_back(RBC::Request());
+          m_req_vector.push_back(MPI_Request{});
           RBC::Isend(m_buffer, m_count, m_datatype, dest, m_tag, m_comm, &m_req_vector.back());
         }
       }
@@ -427,7 +427,7 @@ int RBC::_internal::IbcastReq::test(int* flag, MPI_Status* status) {
     m_send = true;
   }
   if (m_send) {
-    RBC::Testall(m_req_vector.size(), &m_req_vector.front(), flag, MPI_STATUSES_IGNORE);
+    MPI_Testall(m_req_vector.size(), &m_req_vector.front(), flag, MPI_STATUSES_IGNORE);
     if (*flag == 1)
       m_completed = true;
   }

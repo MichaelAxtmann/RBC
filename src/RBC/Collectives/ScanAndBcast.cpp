@@ -69,7 +69,7 @@ int ScanAndBcast(const void* sendbuf, void* recvbuf_scan,
 
   std::unique_ptr<char[]> left_tree(new char[recv_size]);
 
-  Request requests[4];
+  MPI_Request requests[4];
   int is_left_receiving = 0;
   int is_right_receiving = 0;
 
@@ -85,7 +85,7 @@ int ScanAndBcast(const void* sendbuf, void* recvbuf_scan,
     is_right_receiving = 1;
   }
   // var: up_recv
-  RBC::Waitall(is_left_receiving + is_right_receiving, requests, MPI_STATUSES_IGNORE);
+  MPI_Waitall(is_left_receiving + is_right_receiving, requests, MPI_STATUSES_IGNORE);
 
   if (is_left_receiving) {
     MPI_Reduce_local(left_tree.get(), recvbuf_scan, count, datatype, op);
@@ -130,7 +130,7 @@ int ScanAndBcast(const void* sendbuf, void* recvbuf_scan,
   // left_subtree := processes left to our subtree
   // recvbuf_bcast := total sum
 
-  RBC::Waitall(recv_cnt, requests, MPI_STATUSES_IGNORE);
+  MPI_Waitall(recv_cnt, requests, MPI_STATUSES_IGNORE);
 
   if (parent != -1 && !tlx::is_power_of_two(rank + 1)) {
     MPI_Reduce_local(left_tree.get(), recvbuf_scan, count, datatype, op);
@@ -165,7 +165,7 @@ int ScanAndBcast(const void* sendbuf, void* recvbuf_scan,
   }
 
   // var: down_send
-  RBC::Waitall(send_cnt, requests, MPI_STATUSES_IGNORE);
+  MPI_Waitall(send_cnt, requests, MPI_STATUSES_IGNORE);
 
   return 0;
 }

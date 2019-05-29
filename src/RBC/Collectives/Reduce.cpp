@@ -127,7 +127,7 @@ class IreduceReq : public RequestSuperclass {
   bool m_send, m_completed, m_mpi_collective;
   std::unique_ptr<char[]> m_recvbuf_arr, m_reduce_buf;
   Request m_send_req;
-  std::vector<Request> m_recv_requests;
+  std::vector<MPI_Request> m_recv_requests;
   MPI_Request m_mpi_req;
 };
 }  // namespace _internal
@@ -205,7 +205,7 @@ int RBC::_internal::IreduceReq::test(int* flag, MPI_Status* status) {
     for (int i = m_own_height - 1; i >= 0; i--) {
       int tmp_src = tmp_rank - std::pow(2, i);
       if (tmp_src < m_new_rank) {
-        m_recv_requests.push_back(RBC::Request());
+        m_recv_requests.push_back(MPI_Request{});
         int src = (tmp_src + m_root + 1) % m_size;
         RBC::Irecv(m_recvbuf_arr.get() + (m_recv_requests.size() - 1) * m_recv_size, m_count,
                    m_datatype, src,
@@ -219,7 +219,7 @@ int RBC::_internal::IreduceReq::test(int* flag, MPI_Status* status) {
 
   if (!m_send) {
     int recv_finished;
-    RBC::Testall(m_recv_requests.size(), &m_recv_requests.front(), &recv_finished,
+    MPI_Testall(m_recv_requests.size(), &m_recv_requests.front(), &recv_finished,
                  MPI_STATUSES_IGNORE);
     if (recv_finished && m_receives > 0) {
       // Reduce received data and local data

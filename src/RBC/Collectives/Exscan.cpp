@@ -48,7 +48,7 @@ int Exscan(const void* sendbuf, void* recvbuf, int count,
 
   int msg_cnt = 0;
   std::unique_ptr<char[]> tmpbuf;
-  RBC::Request requests[2];
+  MPI_Request requests[2];
 
   if (rank + 1 < size) {
     RBC::Isend(sendbuf, count, datatype, rank + 1, tag, comm, requests);
@@ -63,7 +63,7 @@ int Exscan(const void* sendbuf, void* recvbuf, int count,
     ++msg_cnt;
   }
 
-  RBC::Waitall(msg_cnt, requests, MPI_STATUSES_IGNORE);
+  MPI_Waitall(msg_cnt, requests, MPI_STATUSES_IGNORE);
 
   if (size == 2) {
     return 0;
@@ -170,7 +170,7 @@ class IexscanReq : public RequestSuperclass {
   MPI_Op m_op;
   Comm m_comm;
   bool m_completed, m_mpi_collective;
-  Request m_requests[2];
+  MPI_Request m_requests[2];
   MPI_Request m_mpi_req;
   std::unique_ptr<char[]> m_tmpbuf;
   std::unique_ptr<IscanReq> m_iscan_req;
@@ -254,7 +254,7 @@ int RBC::_internal::IexscanReq::test(int* flag, MPI_Status* status) {
   if (m_shift_phase) {
     assert(m_msg_cnt > 0);
     int local_flag = 0;
-    RBC::Testall(m_msg_cnt, m_requests, &local_flag, MPI_STATUSES_IGNORE);
+    MPI_Testall(m_msg_cnt, m_requests, &local_flag, MPI_STATUSES_IGNORE);
     if (local_flag) {
       if (m_size == 2 || m_rank == 0) {
         m_completed = true;

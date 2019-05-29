@@ -60,7 +60,7 @@ int Scan(const void* sendbuf, void* recvbuf, int count,
   std::unique_ptr<char[]> left_tree(new char[recv_size]);
   std::unique_ptr<char[]> right_tree(new char[recv_size]);
 
-  Request requests[2];
+  MPI_Request requests[2];
   int is_left_receiving = 0;
   int is_right_receiving = 0;
 
@@ -76,7 +76,7 @@ int Scan(const void* sendbuf, void* recvbuf, int count,
     is_right_receiving = 1;
   }
   // var: up_recv
-  RBC::Waitall(is_left_receiving + is_right_receiving, requests, MPI_STATUSES_IGNORE);
+  MPI_Waitall(is_left_receiving + is_right_receiving, requests, MPI_STATUSES_IGNORE);
 
   if (is_left_receiving) {
     MPI_Reduce_local(left_tree.get(), recvbuf, count, datatype, op);
@@ -118,7 +118,7 @@ int Scan(const void* sendbuf, void* recvbuf, int count,
 
   // var: down_send
   if (send_cnt) {
-    RBC::Waitall(send_cnt, requests, MPI_STATUSES_IGNORE);
+    MPI_Waitall(send_cnt, requests, MPI_STATUSES_IGNORE);
   }
 
   return 0;
@@ -293,7 +293,7 @@ int RBC::_internal::IscanReq::test(int* flag, MPI_Status* status) {
   if (m_up_recv) {
     assert(m_is_left_receiving + m_is_right_receiving);
     int local_flag = 0;
-    RBC::Testall(m_is_left_receiving + m_is_right_receiving, m_requests, &local_flag, MPI_STATUSES_IGNORE);
+    MPI_Testall(m_is_left_receiving + m_is_right_receiving, m_requests, &local_flag, MPI_STATUSES_IGNORE);
     if (local_flag) {
       if (m_is_left_receiving) {
         MPI_Reduce_local(m_left_tree.get(), m_recvbuf, m_count, m_datatype, m_op);
@@ -335,7 +335,7 @@ int RBC::_internal::IscanReq::test(int* flag, MPI_Status* status) {
     }
   } else if (m_up_send) {
     int local_flag = 0;
-    RBC::Test(m_requests, &local_flag, MPI_STATUS_IGNORE);
+    MPI_Test(m_requests, &local_flag, MPI_STATUS_IGNORE);
     if (local_flag) {
       // Receive reduces values of processes left to our
       // subtree. There are not processes left to our subtree if we
@@ -384,7 +384,7 @@ int RBC::_internal::IscanReq::test(int* flag, MPI_Status* status) {
     }
   } else if (m_down_recv) {
     int local_flag = 0;
-    RBC::Test(m_requests, &local_flag, MPI_STATUS_IGNORE);
+    MPI_Test(m_requests, &local_flag, MPI_STATUS_IGNORE);
     if (local_flag) {
       MPI_Reduce_local(m_left_tree.get(), m_recvbuf, m_count, m_datatype, m_op);
 
@@ -420,7 +420,7 @@ int RBC::_internal::IscanReq::test(int* flag, MPI_Status* status) {
   } else if (m_down_send) {
     assert(m_send_cnt);
     int local_flag = 0;
-    RBC::Testall(m_send_cnt, m_requests, &local_flag, MPI_STATUSES_IGNORE);
+    MPI_Testall(m_send_cnt, m_requests, &local_flag, MPI_STATUSES_IGNORE);
     if (local_flag) {
       m_down_send = true;
       m_completed = true;

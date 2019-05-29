@@ -54,7 +54,7 @@ class IscanReq : public RequestSuperclass {
   bool m_completed, m_up_send, m_up_recv, m_down_recv, m_down_send;
   bool m_mpi_collective;
   std::unique_ptr<char[]> m_left_tree, m_right_tree;
-  Request m_requests[2];
+  MPI_Request m_requests[2];
   MPI_Request m_mpi_req;
 };
 }  // namespace _internal
