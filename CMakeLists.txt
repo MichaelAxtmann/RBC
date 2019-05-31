@@ -72,6 +72,18 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wdeprecated")
 endif()
 
+# Include interprocedural optimization for targets which are generated after this code.
+
+include(CheckIPOSupported)
+
+check_ipo_supported(RESULT ipo_supported OUTPUT error)
+if( ipo_supported )
+  message(STATUS "IPO / LTO enabled")
+  set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+else()
+  message(STATUS "IPO / LTO not supported: <${error}>")
+endif()
+
 ########################################################
 ## Executables and libraries
 ########################################################
@@ -85,7 +97,7 @@ file(GLOB RBC_SRCS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
  )
 
 # Build shared library to inherit mpi wrapper from parent targets
-add_library(rbc SHARED ${RBC_SRCS})
+add_library(rbc STATIC ${RBC_SRCS})
 target_link_libraries(rbc tlx)
 
 file(GLOB RBC_INCLUDES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
