@@ -31,52 +31,42 @@
 #include "../PointToPoint/Recv.hpp"
 #include "../PointToPoint/Send.hpp"
 #include "../PointToPoint/Sendrecv.hpp"
+#include "Collectives.hpp"
 
 namespace RBC {
 int Bcast(void* buffer, int count, MPI_Datatype datatype, int root,
           Comm const& comm) {
-  if (comm.useMPICollectives()) {
-    return MPI_Bcast(buffer, count, datatype, root, comm.get());
+  
+  const int tag = Tag_Const::BCAST;
+
+  const int size = comm.getSize();
+  const int rank = comm.getRank();
+  const int zeroed_rank = _internal::RemoveBinomTreeRoot(root, rank, size);
+
+  const int tailing_zeros = tlx::ffs(zeroed_rank) - 1;
+  const int iterations = zeroed_rank > 0 ?
+    tailing_zeros : tlx::integer_log2_ceil(size);
+
+  if (zeroed_rank > 0) {
+
+    const int src = zeroed_rank - (1 << iterations);
+    const int rooted_src = _internal::AddBinomTreeRoot(root, src, size);
+
+    Recv(buffer, count, datatype, rooted_src, tag, comm, MPI_STATUS_IGNORE);
   }
-  int tag = Tag_Const::BCAST;
-  MPI_Status status;
-  int rank = 0;
-  int size = 0;
-  int own_height = 0;
-  Comm_rank(comm, &rank);
-  Comm_size(comm, &size);
+  
+  for (int i = iterations - 1; i >= 0; --i) {
 
-  int target_mask = (rank - root + size) % size;
-  int height = tlx::integer_log2_ceil(size);
-  for (int i = 0; ((target_mask >> i) % 2 == 0) && (i < height); i++)
-    own_height++;
+    const int target = zeroed_rank + (1 << i);
 
-  if (rank != root) {
-    int temp_rank = rank - root;
-    if (temp_rank < 0)
-      temp_rank += size;
-    int mask = 0x1;
-    while ((temp_rank ^ mask) > temp_rank) {
-      mask = mask << 1;
+    if (target >= size) {
+      break;
     }
-    int temp_src = temp_rank ^ mask;
-    int src = (temp_src + root) % size;
-    Recv(buffer, count, datatype, src, tag, comm, &status);
+    
+    const int rooted_target = _internal::AddBinomTreeRoot(root, target, size);
+    Send(buffer, count, datatype, rooted_target, tag, comm);
   }
-
-  while (height > 0) {
-    if (own_height >= height) {
-      int temp_rank = rank - root;
-      if (temp_rank < 0)
-        temp_rank += size;
-      int temp_dest = temp_rank + std::pow(2, height - 1);
-      if (temp_dest < size) {
-        int dest = (temp_dest + root) % size;
-        Send(buffer, count, datatype, dest, tag, comm);
-      }
-    }
-    height--;
-  }
+  
   return 0;
 }
 
@@ -343,12 +333,10 @@ class IbcastReq : public RequestSuperclass {
  private:
   void* m_buffer;
   MPI_Datatype m_datatype;
-  int m_count, m_root, m_tag, m_own_height, m_size, m_rank, m_height, m_received, m_sends;
+  int m_count, m_root, m_tag, m_size, m_zeroed_rank, m_iteration;
   Comm m_comm;
-  bool m_send, m_completed, m_mpi_collective;
-  Request m_recv_req;
-  std::vector<MPI_Request> m_req_vector;
-  MPI_Request m_mpi_req;
+  bool m_completed, m_mpi_collective;
+  MPI_Request m_request;
 };
 }  // namespace _internal
 
@@ -367,34 +355,40 @@ RBC::_internal::IbcastReq::IbcastReq(void* buffer, int count, MPI_Datatype datat
   m_count(count),
   m_root(root),
   m_tag(tag),
-  m_own_height(0),
   m_size(0),
-  m_rank(0),
-  m_height(0),
-  m_received(0),
+  m_zeroed_rank(0),
+  m_iteration(0),
   m_comm(comm),
-  m_send(false),
   m_completed(false),
-  m_mpi_collective(false) {
+  m_mpi_collective(false),
+  m_request(MPI_REQUEST_NULL) {
+  
 #ifndef NO_NONBLOCKING_COLL_MPI_SUPPORT
   if (comm.useMPICollectives()) {
-    MPI_Ibcast(buffer, count, datatype, root, comm.get(), &m_mpi_req);
+    MPI_Ibcast(buffer, count, datatype, root, comm.get(), &m_request);
     m_mpi_collective = true;
     return;
   }
 #endif
-  RBC::Comm_rank(comm, &m_rank);
-  RBC::Comm_size(comm, &m_size);
-  m_sends = 0;
-  assert(m_size > 0);
-  int temp_rank = (m_rank - root + m_size) % m_size;
-  m_height = tlx::integer_log2_ceil(m_size);
-  for (int i = 0; ((temp_rank >> i) % 2 == 0) && (i < m_height); i++)
-    m_own_height++;
-  if (m_rank == root)
-    m_received = 1;
-  else
-    RBC::Irecv(buffer, count, datatype, MPI_ANY_SOURCE, tag, comm, &m_recv_req);
+  
+
+  m_size = comm.getSize();
+  const int rank = comm.getRank();
+  m_zeroed_rank = _internal::RemoveBinomTreeRoot(root, rank, m_size);
+
+  const int tailing_zeros = tlx::ffs(m_zeroed_rank) - 1;
+  const int iterations = m_zeroed_rank > 0 ?
+    tailing_zeros : tlx::integer_log2_ceil(m_size);
+  m_iteration = iterations - 1;
+
+  if (m_zeroed_rank > 0) {
+
+    const int src = m_zeroed_rank - (1 << iterations);
+    const int rooted_src = _internal::AddBinomTreeRoot(root, src, m_size);
+
+    Irecv(m_buffer, m_count, m_datatype, rooted_src, m_tag, m_comm, &m_request);
+  }
+
 }
 
 int RBC::_internal::IbcastReq::test(int* flag, MPI_Status* status) {
@@ -403,33 +397,54 @@ int RBC::_internal::IbcastReq::test(int* flag, MPI_Status* status) {
     return 0;
   }
 
-  if (m_mpi_collective)
-    return MPI_Test(&m_mpi_req, flag, status);
+  *flag = 0;
 
-  if (!m_received) {
-    RBC::Test(&m_recv_req, &m_received, MPI_STATUS_IGNORE);
+  if (m_mpi_collective) {
+    const auto err = MPI_Test(&m_request, flag, status);
+    m_completed = *flag;
+    return err;
   }
-  if (m_received && !m_send) {
-    while (m_height > 0) {
-      if (m_own_height >= m_height) {
-        int temp_rank = m_rank - m_root;
-        if (temp_rank < 0)
-          temp_rank += m_size;
-        int temp_dest = temp_rank + std::pow(2, m_height - 1);
-        if (temp_dest < m_size) {
-          int dest = (temp_dest + m_root) % m_size;
-          m_req_vector.push_back(MPI_Request{});
-          RBC::Isend(m_buffer, m_count, m_datatype, dest, m_tag, m_comm, &m_req_vector.back());
-        }
-      }
-      m_height--;
+
+  // Complete pending request.
+  if (m_request != MPI_REQUEST_NULL) {
+
+    int completed = 0;
+    MPI_Test(&m_request, &completed, MPI_STATUS_IGNORE);
+    if (completed) {
+      m_request = MPI_REQUEST_NULL;
     }
-    m_send = true;
+
   }
-  if (m_send) {
-    MPI_Testall(m_req_vector.size(), &m_req_vector.front(), flag, MPI_STATUSES_IGNORE);
-    if (*flag == 1)
-      m_completed = true;
+
+  // No pending request. Send data or finalize algorithm.
+  if (m_request == MPI_REQUEST_NULL) {
+
+    if (m_iteration >= 0) {
+    
+      const int target = m_zeroed_rank + (1 << m_iteration);
+
+      if (target < m_size) {
+
+        const int rooted_target = _internal::AddBinomTreeRoot(m_root, target, m_size);
+        Isend(m_buffer, m_count, m_datatype, rooted_target, m_tag, m_comm, &m_request);
+
+        --m_iteration;
+
+      } else {
+
+        m_iteration = -1;
+
+        m_completed = 1;
+        *flag = 1;
+        
+      }
+    } else {
+
+      m_completed = 1;
+      *flag = 1;
+
+    }
   }
+
   return 0;
 }
