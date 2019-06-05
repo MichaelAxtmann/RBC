@@ -197,10 +197,9 @@ endif()
 # youcompleteme and rtags #
 ###########################
 
-option(COMPILE_DATABASE "Creates a compile database for youcompleteme and adds the database to rtags" OFF)
+option(RBC_COMPILE_DATABASE "Creates a compile database for youcompleteme and adds the database to rtags" OFF)
 
-if (COMPILE_DATABASE)
-  SET(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+if (RBC_COMPILE_DATABASE)
 
   # add header files to existing compile database
   list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
