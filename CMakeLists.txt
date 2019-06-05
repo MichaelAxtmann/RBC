@@ -74,14 +74,18 @@ endif()
 
 # Include interprocedural optimization for targets which are generated after this code.
 
-include(CheckIPOSupported)
+if (CMAKE_BUILD_TYPE STREQUAL "Release")
 
-check_ipo_supported(RESULT ipo_supported OUTPUT error)
-if( ipo_supported )
-  message(STATUS "IPO / LTO enabled")
-  set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
-else()
-  message(STATUS "IPO / LTO not supported: <${error}>")
+  include(CheckIPOSupported)
+
+  check_ipo_supported(RESULT ipo_supported OUTPUT error)
+  if( ipo_supported )
+    message(STATUS "IPO / LTO enabled")
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+  else()
+    message(STATUS "IPO / LTO not supported: <${error}>")
+  endif()
+
 endif()
 
 ########################################################
