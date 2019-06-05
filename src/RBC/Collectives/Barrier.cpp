@@ -38,10 +38,11 @@ namespace _internal {
  */
 class IbarrierReq : public RequestSuperclass {
  public:
-  explicit IbarrierReq(RBC::Comm const& comm);
+  explicit IbarrierReq(RBC::Comm const& comm, int tag);
   int test(int* flag, MPI_Status* status);
 
  private:
+  const int m_tag;
   Request request;
   MPI_Request mpi_req;
   bool mpi_collective;
@@ -49,13 +50,14 @@ class IbarrierReq : public RequestSuperclass {
 };
 }  // namespace _internal
 
-int Ibarrier(Comm const& comm, Request* request) {
-  request->set(std::make_shared<RBC::_internal::IbarrierReq>(comm));
+int Ibarrier(Comm const& comm, Request* request, int tag) {
+  request->set(std::make_shared<RBC::_internal::IbarrierReq>(comm, tag));
   return 0;
 }
 }  // namespace RBC
 
-RBC::_internal::IbarrierReq::IbarrierReq(RBC::Comm const& comm) :
+RBC::_internal::IbarrierReq::IbarrierReq(RBC::Comm const& comm, int tag) :
+  m_tag(tag),
   mpi_collective(false),
   a(0) {
 #ifndef NO_NONBLOCKING_COLL_MPI_SUPPORT
@@ -65,7 +67,6 @@ RBC::_internal::IbarrierReq::IbarrierReq(RBC::Comm const& comm) :
     return;
   }
 #endif
-  int tag = Tag_Const::BARRIER;
   IscanAndBcast(&a, &b, &c, 1, MPI_INT, MPI_SUM, comm, &request, tag);
 }
 

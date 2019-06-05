@@ -227,27 +227,40 @@ class Comm {
 // Move to Common.hpp
 namespace Tag_Const {
 const int
-  ALLGATHER = 1000060,
-  ALLREDUCE = 1000061,
-  ALLREDUCETWOTREE = 1000062,
-  REDUCETWOTREE = 1000063,
-  REDUCEROOTTWOTREE = 1000064,
-  BCASTTWOTREE = 1000065,
-  BCASTROOTTWOTREE = 1000066,
-  BARRIER = 1000067,
-  BCAST = 1000068,
-  EXSCAN = 1000069,
-  GATHER = 1000070,
-  GATHERV = 1000071,
-  GATHERM = 1000072,
-  REDUCE = 1000073,
-  SCAN = 1000074,
-  SCANTWOTREE = 1000075,
-  SCANANDBCAST = 1000076,
-  SCANANDBCASTSCANTWOTREE = 1000077,
+  ALLGATHER                = 1000060,
+  ALLREDUCE                = 1000061,
+  ALLREDUCETWOTREE         = 1000062,
+  REDUCETWOTREE            = 1000063,
+  REDUCEROOTTWOTREE        = 1000064,
+  BCASTTWOTREE             = 1000065,
+  BCASTROOTTWOTREE         = 1000066,
+  BARRIER                  = 1000067,
+  BCAST                    = 1000068,
+  EXSCAN                   = 1000069,
+  GATHER                   = 1000070,
+  GATHERV                  = 1000071,
+  GATHERM                  = 1000072,
+  REDUCE                   = 1000073,
+  SCAN                     = 1000074,
+  SCANTWOTREE              = 1000075,
+  SCANANDBCAST             = 1000076,
+  SCANANDBCASTSCANTWOTREE  = 1000077,
   SCANANDBCASTBCASTTWOTREE = 1000078,
-  ALLTOALL = 1000079;
-}   // namespace Tag_Const
+  ALLTOALL                 = 1000079,
+  IBCAST                   = 1000080,
+  IGATHER                  = 1000081,
+  IGATHERV                 = 1000082,
+  IGATHERM                 = 1000083,
+  IALLGATHER               = 1000084,
+  IALLGATHERV              = 1000085,
+  IALLGATHERM              = 1000086,
+  IREDUCE                  = 1000087,
+  IALLREDUCE               = 1000088,
+  ISCAN                    = 1000089,
+  IEXSCAN                  = 1000090,
+  ISCANANDBCAST            = 1000091,
+  IBARRIER                 = 1000092;
+} // namespace Tag_Const
 
 /**
  * Non-blocking broadcast
@@ -260,7 +273,7 @@ const int
  * @param tag Tag to differentiate between multiple calls
  */
 int Ibcast(void* buffer, int count, MPI_Datatype datatype, int root,
-           RBC::Comm const& comm, Request* request, int tag = Tag_Const::BCAST);
+           RBC::Comm const& comm, Request* request, int tag = Tag_Const::IBCAST);
 
 /**
  * Blocking broadcast
@@ -309,7 +322,7 @@ int Alltoallv(void* sendbuf,
 int Igather(const void* sendbuf, int sendcount, MPI_Datatype sendtype,
             void* recvbuf, int recvcount, MPI_Datatype recvtype,
             int root, RBC::Comm const& comm, RBC::Request* request,
-            int tag = Tag_Const::GATHER);
+            int tag = Tag_Const::IGATHER);
 
 /**
  * Blocking gather with equal amount of elements on each process
@@ -343,7 +356,7 @@ int Gather(const void* sendbuf, int sendcount, MPI_Datatype sendtype,
 int Igatherv(const void* sendbuf, int sendcount, MPI_Datatype sendtype,
              void* recvbuf, const int* recvcounts, const int* displs, MPI_Datatype recvtype,
              int root, RBC::Comm const& comm, RBC::Request* request,
-             int tag = Tag_Const::GATHER);
+             int tag = Tag_Const::IGATHERV);
 
 /**
  * Blocking gather with specified number of elements on each process
@@ -378,7 +391,7 @@ int Gatherv(const void* sendbuf, int sendcount, MPI_Datatype sendtype,
 int Igatherm(const void* sendbuf, int sendcount, MPI_Datatype sendtype,
              void* recvbuf, int recvcount, int root,
              std::function<void(void*, void*, void*, void*, void*)> op, RBC::Comm const& comm,
-             RBC::Request* request, int tag = Tag_Const::GATHER);
+             RBC::Request* request, int tag = Tag_Const::IGATHERM);
 
 /**
  * Blocking gather that merges the data via a given function
@@ -412,7 +425,7 @@ int Gatherm(const void* sendbuf, int sendcount, MPI_Datatype sendtype,
 int Iallgather(const void* sendbuf, int sendcount, MPI_Datatype sendtype,
                void* recvbuf, int recvcount, MPI_Datatype recvtype,
                RBC::Comm const& comm, RBC::Request* request,
-               int tag = Tag_Const::ALLGATHER);
+               int tag = Tag_Const::IALLGATHER);
 
 /**
  * Blocking allgather with equal amount of elements on each process
@@ -720,7 +733,7 @@ int Bcast(void* buffer, int count, MPI_Datatype datatype, int root,
 int Iallgatherv(const void* sendbuf, int sendcount, MPI_Datatype sendtype,
                 void* recvbuf, const int* recvcounts, const int* displs, MPI_Datatype recvtype,
                 RBC::Comm const& comm, RBC::Request* request,
-                int tag = Tag_Const::ALLGATHER);
+                int tag = Tag_Const::IALLGATHERV);
 
 /**
  * Blocking allgather with specified number of elements on each process
@@ -753,7 +766,7 @@ int Allgatherv(const void* sendbuf, int sendcount, MPI_Datatype sendtype,
 int Iallgatherm(const void* sendbuf, int sendcount, MPI_Datatype sendtype,
                 void* recvbuf, int recvcount,
                 std::function<void(void*, void*, void*, void*, void*)> op, RBC::Comm const& comm,
-                RBC::Request* request, int tag = Tag_Const::ALLGATHER);
+                RBC::Request* request, int tag = Tag_Const::IALLGATHERM);
 
 /**
  * Blocking allgather that merges the data via a given function
@@ -784,7 +797,7 @@ int Allgatherm(const void* sendbuf, int sendcount, MPI_Datatype sendtype,
  */
 int Ireduce(const void* sendbuf, void* recvbuf, int count, MPI_Datatype datatype,
             MPI_Op op, int root, RBC::Comm const& comm, Request* request,
-            int tag = Tag_Const::REDUCE);
+            int tag = Tag_Const::IREDUCE);
 
 /**
  * Blocking reduce
@@ -814,7 +827,7 @@ int Reduce(const void* sendbuf, void* recvbuf, int count, MPI_Datatype datatype,
  */
 int Iallreduce(const void* sendbuf, void* recvbuf, int count, MPI_Datatype datatype,
                MPI_Op op, RBC::Comm const& comm, Request* request,
-               int tag = Tag_Const::ALLREDUCE);
+               int tag = Tag_Const::IALLREDUCE);
 
 /**
  * Blocking Allreduce
@@ -841,7 +854,7 @@ int Allreduce(const void* sendbuf, void* recvbuf, int count, MPI_Datatype dataty
  */
 int Iscan(const void* sendbuf, void* recvbuf, int count, MPI_Datatype datatype,
           MPI_Op op, RBC::Comm const& comm, Request* request,
-          int tag = Tag_Const::SCAN);
+          int tag = Tag_Const::ISCAN);
 
 /**
  * Blocking scan (partial reductions)
@@ -868,7 +881,7 @@ int Scan(const void* sendbuf, void* recvbuf, int count, MPI_Datatype datatype,
  */
 int Iexscan(const void* sendbuf, void* recvbuf, int count, MPI_Datatype datatype,
             MPI_Op op, RBC::Comm const& comm, Request* request,
-            int tag = Tag_Const::EXSCAN);
+            int tag = Tag_Const::IEXSCAN);
 
 /**
  * Blocking exclusive scan (partial reductions)
@@ -896,7 +909,7 @@ int Exscan(const void* sendbuf, void* recvbuf, int count, MPI_Datatype datatype,
  */
 int IscanAndBcast(const void* sendbuf, void* recvbuf_scan, void* recvbuf_bcast,
                   int count, MPI_Datatype datatype, MPI_Op op, RBC::Comm const& comm,
-                  Request* request, int tag = Tag_Const::SCANANDBCAST);
+                  Request* request, int tag = Tag_Const::ISCANANDBCAST);
 
 /**
  * Non-blocking scan (partial reductions) and broadcast of the reduction over all elements
@@ -1093,7 +1106,7 @@ int Probe(int source, int tag, RBC::Comm const& comm, MPI_Status* status);
  * @param comm The Range comm on which the operation is performed
  * @param request Request that will be returned
  */
-int Ibarrier(RBC::Comm const& comm, Request* request);
+int Ibarrier(RBC::Comm const& comm, Request* request, int tag = Tag_Const::IBARRIER);
 
 /**
  * Blocking barrier
