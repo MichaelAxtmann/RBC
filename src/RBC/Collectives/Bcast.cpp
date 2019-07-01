@@ -28,14 +28,21 @@
 #include <RBC.hpp>
 #include <tlx/math.hpp>
 
-#include "../PointToPoint/Recv.hpp"
 #include "../PointToPoint/Send.hpp"
+#include "../PointToPoint/Recv.hpp"
 #include "../PointToPoint/Sendrecv.hpp"
 #include "Collectives.hpp"
 
 namespace RBC {
 int Bcast(void* buffer, int count, MPI_Datatype datatype, int root,
           Comm const& comm) {
+  if (comm.useMPICollectives()) {
+    return MPI_Bcast(buffer, count, datatype, root, comm.get());
+  }
+
+  if (count == 0) {
+    return 0;
+  }
   
   const int tag = Tag_Const::BCAST;
 
@@ -60,7 +67,7 @@ int Bcast(void* buffer, int count, MPI_Datatype datatype, int root,
     const int target = zeroed_rank + (1 << i);
 
     if (target >= size) {
-      break;
+      continue;
     }
     
     const int rooted_target = _internal::AddBinomTreeRoot(root, target, size);
@@ -362,6 +369,11 @@ RBC::_internal::IbcastReq::IbcastReq(void* buffer, int count, MPI_Datatype datat
   m_completed(false),
   m_mpi_collective(false),
   m_request(MPI_REQUEST_NULL) {
+
+  if (count == 0) {
+    m_completed = true;
+    return;
+  }
   
 #ifndef NO_NONBLOCKING_COLL_MPI_SUPPORT
   if (comm.useMPICollectives()) {
@@ -376,6 +388,11 @@ RBC::_internal::IbcastReq::IbcastReq(void* buffer, int count, MPI_Datatype datat
   const int rank = comm.getRank();
   m_zeroed_rank = _internal::RemoveBinomTreeRoot(root, rank, m_size);
 
+  if (m_size == 1) {
+    m_completed = true;
+    return;
+  }
+
   const int tailing_zeros = tlx::ffs(m_zeroed_rank) - 1;
   const int iterations = m_zeroed_rank > 0 ?
     tailing_zeros : tlx::integer_log2_ceil(m_size);
@@ -387,6 +404,20 @@ RBC::_internal::IbcastReq::IbcastReq(void* buffer, int count, MPI_Datatype datat
     const int rooted_src = _internal::AddBinomTreeRoot(root, src, m_size);
 
     Irecv(m_buffer, m_count, m_datatype, rooted_src, m_tag, m_comm, &m_request);
+    
+  } else {
+
+    assert(m_iteration >= 0);
+    
+    const int target = m_zeroed_rank + (1 << m_iteration);
+
+    assert(target < m_size);
+
+    const int rooted_target = _internal::AddBinomTreeRoot(m_root, target, m_size);
+    Isend(m_buffer, m_count, m_datatype, rooted_target, m_tag, m_comm, &m_request);
+
+    --m_iteration;
+    
   }
 
 }
@@ -428,17 +459,11 @@ int RBC::_internal::IbcastReq::test(int* flag, MPI_Status* status) {
         const int rooted_target = _internal::AddBinomTreeRoot(m_root, target, m_size);
         Isend(m_buffer, m_count, m_datatype, rooted_target, m_tag, m_comm, &m_request);
 
-        --m_iteration;
-
-      } else {
-
-        m_iteration = -1;
-
-        m_completed = 1;
-        *flag = 1;
-        
       }
-    } else {
+
+      --m_iteration;
+
+  } else {
 
       m_completed = 1;
       *flag = 1;

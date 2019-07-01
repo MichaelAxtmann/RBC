@@ -42,6 +42,16 @@ void GenerateData(std::vector<long>& send, std::vector<long>& recv) {
   }
 }
 
+void GenerateDataOnRoot(std::vector<long>& send, int rank, int root) {
+  if (rank == root) {
+    for (size_t idx = 0; idx != send.size(); ++idx) {
+      send[idx] = rand();
+    }
+  } else {
+    std::fill(send.begin(), send.end(), 0);
+  }
+}
+
 #define PrintDistributed(string)              \
   { std::stringstream buffer;                 \
     buffer << rank << ": " << string << "\n"; \
@@ -485,27 +495,28 @@ int main(int argc, char** argv) {
   PRINT_ROOT("Bcast");
   for (int root = 0; root != size; ++root) {
     if (mpi) {
-      GenerateData(send, recv);
+      PRINT_ROOT("MPI" << root);
+      GenerateDataOnRoot(send, rank, root);
       MPI_Bcast(send.data(), el_cnt, type, root, comm);
       PrintDistributed("BcastBinomial: " << std::endl << send << std::endl << recv);
 
-      GenerateData(send, recv);
+      GenerateDataOnRoot(send, rank, root);
       MPI_Bcast(send.data(), el_cnt, type, root, comm);
       PrintDistributed("BcastScatterAllgather: " << std::endl << send << std::endl << recv);
 
-      GenerateData(send, recv);
+      GenerateDataOnRoot(send, rank, root);
       MPI_Bcast(send.data(), el_cnt, type, root, comm);
       PrintDistributed("BcastTwotree: " << std::endl << send << std::endl << recv);
     } else {
-      GenerateData(send, recv);
+      PRINT_ROOT("RBC" << root);GenerateDataOnRoot(send, rank, root);
       RBC::_internal::optimized::BcastBinomial(send.data(), el_cnt, type, root, rcomm);
       PrintDistributed("BcastBinomial: " << std::endl << send << std::endl << recv);
 
-      GenerateData(send, recv);
+      GenerateDataOnRoot(send, rank, root);
       RBC::_internal::optimized::BcastScatterAllgather(send.data(), el_cnt, type, root, rcomm);
       PrintDistributed("BcastScatterAllgather: " << std::endl << send << std::endl << recv);
 
-      GenerateData(send, recv);
+      GenerateDataOnRoot(send, rank, root);
       RBC::_internal::optimized::BcastTwotree(send.data(), el_cnt, type, root, rcomm);
       PrintDistributed("BcastTwotree: " << std::endl << send << std::endl << recv);
     }
