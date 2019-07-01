@@ -499,8 +499,17 @@ int RBC::Probe(int source, int tag, RBC::Comm const& comm, MPI_Status* status) {
   return 0;
 }
 
+int RBC::Test(MPI_Request* request, int* flag, MPI_Status* status) {
+  return MPI_Test(request, flag, status);
+}
+
 int RBC::Test(RBC::Request* request, int* flag, MPI_Status* status) {
   return request->test(flag, status);
+}
+
+int RBC::Testall(int count, MPI_Request* array_of_requests, int* flag,
+                 MPI_Status array_of_statuses[]) {
+  return MPI_Testall(count, array_of_requests, flag, array_of_statuses);
 }
 
 int RBC::Testall(int count, RBC::Request* array_of_requests, int* flag,
@@ -520,12 +529,21 @@ int RBC::Testall(int count, RBC::Request* array_of_requests, int* flag,
   return 0;
 }
 
+int RBC::Wait(MPI_Request* request, MPI_Status* status) {
+  return MPI_Wait(request, status);
+}
+
 int RBC::Wait(RBC::Request* request, MPI_Status* status) {
   int flag = 0, return_value;
   while (flag == 0) {
     return_value = Test(request, &flag, status);
   }
   return return_value;
+}
+
+int RBC::Waitall(int count, MPI_Request array_of_requests[],
+                 MPI_Status array_of_statuses[]) {
+  return MPI_Waitall(count, array_of_requests, array_of_statuses);
 }
 
 int RBC::Waitall(int count, RBC::Request array_of_requests[],

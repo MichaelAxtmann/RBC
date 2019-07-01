@@ -1121,7 +1121,24 @@ int Barrier(RBC::Comm const& comm);
  * @param status Returns a status if completed, can be MPI_STATUS_IGNORE
  * @return
  */
+int Test(MPI_Request* request, int* flag, MPI_Status* status);
+
+/**
+ * Test if a operation is completed
+ * @param request Request of the operation
+ * @param flag Returns 1 if operation completed, else 0
+ * @param status Returns a status if completed, can be MPI_STATUS_IGNORE
+ * @return
+ */
 int Test(Request* request, int* flag, MPI_Status* status);
+
+/**
+ * Wait until a operation is completed
+ * @param request Request of the operation
+ * @param status Returns a status if completed, can be MPI_STATUS_IGNORE
+ * @return
+ */
+int Wait(MPI_Request* request, MPI_Status* status);
 
 /**
  * Wait until a operation is completed
@@ -1138,7 +1155,26 @@ int Wait(Request* request, MPI_Status* status);
  * @param flag Returns 1 if all operations completed, else 0
  * @param array_of_statuses Array of statuses for the operations, can be MPI_STATUSES_IGNORE
  */
+int Testall(int count, MPI_Request array_of_requests[], int* flag,
+            MPI_Status array_of_statuses[]);
+
+/**
+ * Test if multiple operations are completed
+ * @param count Number of operations
+ * @param array_of_requests Array of requests of the operations
+ * @param flag Returns 1 if all operations completed, else 0
+ * @param array_of_statuses Array of statuses for the operations, can be MPI_STATUSES_IGNORE
+ */
 int Testall(int count, Request array_of_requests[], int* flag,
+            MPI_Status array_of_statuses[]);
+
+/**
+ * Wait until multiple operations are completed
+ * @param count Number of operations
+ * @param array_of_requests Array of requests of the operations
+ * @param array_of_statuses Array of statuses for the operations, can be MPI_STATUSES_IGNORE
+ */
+int Waitall(int count, MPI_Request array_of_requests[],
             MPI_Status array_of_statuses[]);
 
 /**
