@@ -171,7 +171,6 @@ int ScanAndBcast(const void* sendbuf, void* recvbuf_scan,
 }
 
 namespace _internal {
-// todo: Rewrite nonblocking algorithm and use Scan.cpp as a template (more efficient)!
 /*
  * Request for the scan and broadcast
  */
