@@ -24,93 +24,97 @@
 #include <cstring>
 #include <iostream>
 
-#include "RBC.hpp"
-#include "tlx/algorithm.hpp"
-#include "tlx/math.hpp"
+#include <RBC.hpp>
+#include <tlx/algorithm.hpp>
+#include <tlx/math.hpp>
 
+#include "Collectives.hpp"
 
 namespace RBC {
 
 int Gather(const void* sendbuf, int sendcount, MPI_Datatype sendtype,
            void* recvbuf, int recvcount, MPI_Datatype recvtype,
            int root, RBC::Comm const& comm) {
-#ifndef NO_IBAST
   if (comm.useMPICollectives()) {
     return MPI_Gather(const_cast<void*>(sendbuf), sendcount, sendtype, recvbuf, recvcount, recvtype,
                       root, comm.get());
   }
-#endif
 
-  int tag = RBC::Tag_Const::GATHER;
-  int rank, size;
-  Comm_rank(comm, &rank);
-  Comm_size(comm, &size);
-
-  int new_rank = (rank - root + size) % size;
-  int max_height = tlx::integer_log2_ceil(size);
-  int own_height = 0;
-  if (std::pow(2, max_height) < size)
-    max_height++;
-  for (int i = 0; ((new_rank >> i) % 2 == 0) && (i < max_height); i++)
-    own_height++;
-
-  MPI_Aint lb, recv_size, send_size;
-  MPI_Type_get_extent(recvtype, &lb, &recv_size);
-  MPI_Type_get_extent(sendtype, &lb, &send_size);
-  int recvtype_size = static_cast<int>(recv_size);
-  int sendtype_size = static_cast<int>(send_size);
-
-  int subtree_size = static_cast<int>(std::min(std::pow(2, own_height),
-                                               static_cast<double>(size)));
-  int total_recvcount = 0;
-  assert(sendcount == recvcount);
-  assert(sendtype_size == recvtype_size);
-  total_recvcount = subtree_size * recvcount;
-  recv_size = total_recvcount * recvtype_size;
-  char* recv_buf = static_cast<char*>(recvbuf);
-  if (rank != root) {
-    recv_buf = static_cast<char*>(recvbuf);
+  if (sendcount == 0) {
+    return 0;
   }
 
-  // Copy send data into receive buffer
-  std::memcpy(recv_buf, sendbuf, sendcount * sendtype_size);
-  int received = sendcount;
-  int height = 1;
+  const int tag = Tag_Const::GATHER;
+  const int rank = comm.getRank();
+  const int size = comm.getSize();
 
-  // If messages have to be received
-  while (height <= own_height) {
-    int tmp_src = new_rank + std::pow(2, height - 1);
-    if (tmp_src < size) {
-      int src = (tmp_src + root) % size;
-      // Receive message
-      MPI_Status status;
-      Recv(recv_buf + received * sendtype_size, recvcount - received,
-           sendtype, src, tag, comm, &status);
-      int count;
-      MPI_Get_count(&status, sendtype, &count);
-      // Merge the received data
-      received += count;
-      height++;
-    } else {
-      // Source rank larger than comm size
-      height++;
+  MPI_Aint lb, m_type_bytes_aint;
+  MPI_Type_get_extent(sendtype, &lb, &m_type_bytes_aint);
+  const size_t m_type_bytes = static_cast<int>(m_type_bytes_aint);
+
+  char* recv_ptr = static_cast<char*>(recvbuf);
+  const auto total_recv_bytes = m_type_bytes * size * sendcount;
+
+  if (rank != root || root != 0) {
+
+    recv_ptr = static_cast<char*>(malloc(total_recv_bytes));
+    
+  }
+  
+  memcpy(recv_ptr, sendbuf, m_type_bytes * sendcount);
+
+  const int zeroed_rank = _internal::RemoveBinomTreeRoot(root, rank, size);
+
+  const int tailing_zeros = tlx::ffs(zeroed_rank) - 1;
+  const int iterations = zeroed_rank > 0 ?
+    tailing_zeros : tlx::integer_log2_ceil(size);
+
+  int recved_count = sendcount;
+
+  for (int i = 0; i != iterations; ++i) {
+
+    const int source = zeroed_rank + (1 << i);
+
+    if (source >= size) {
+      break;
     }
+    
+    const int rooted_source = _internal::AddBinomTreeRoot(root, source, size);
+
+    const int count = std::min(sendcount << i, sendcount * (size - source));
+    Recv(recv_ptr + m_type_bytes * recved_count, count, recvtype, rooted_source, tag,
+             comm, MPI_STATUS_IGNORE);
+
+    recved_count += count;
   }
 
-  // When all messages have been received
-  if (rank == root) {
-    // root doesn't send to anyone
-    assert(total_recvcount == received);
-  } else {
-    // Send to parent node
-    int tmp_dest = new_rank - std::pow(2, height - 1);
-    int dest = (tmp_dest + root) % size;
-    Send(recv_buf, received, sendtype, dest, tag, comm);
+  if (zeroed_rank > 0) {
+
+    const int target = zeroed_rank - (1 << iterations);
+    const int rooted_target = _internal::AddBinomTreeRoot(root, target, size);
+
+    Send(recv_ptr, recved_count, sendtype, rooted_target, tag, comm);
   }
 
-  if (rank != root) {
-    delete[] recv_buf;
+  // Reorder elements at root.
+  if (rank == root && root != 0) {
+
+    const size_t right_bytes = m_type_bytes * root * recvcount;
+    const size_t left_bytes  = m_type_bytes * size * recvcount - right_bytes;
+    
+    memcpy(recvbuf, recv_ptr + left_bytes, right_bytes);
+    memcpy(static_cast<char*>(recvbuf) + right_bytes, recv_ptr, left_bytes);
+    
   }
+
+  if (rank != root || root != 0) {
+    assert(recv_ptr != recvbuf);
+    free(recv_ptr);
+    recv_ptr = static_cast<char*>(recvbuf);
+  }
+
+  assert(recv_ptr == recvbuf);
+  
   return 0;
 }
 
@@ -129,17 +133,15 @@ class IgatherReq : public RequestSuperclass {
   int test(int* flag, MPI_Status* status);
 
  private:
-  const void* m_sendbuf;
-  void* m_recvbuf;
-  int m_sendcount, m_recvcount, m_root, m_tag, m_own_height, m_size, m_rank, m_height,
-    m_received, m_count, m_total_recvcount, m_new_rank, m_sendtype_size,
-    m_recvtype_size, m_recv_size;
-  MPI_Datatype m_sendtype, m_recvtype;
+  char* m_buffer;
+  char* m_recv_ptr;
+  MPI_Datatype m_datatype;
+  int m_count, m_recved_count, m_root, m_tag, m_size, m_rank,
+    m_zeroed_rank, m_iteration, m_iterations;
+  size_t m_type_bytes;
   Comm m_comm;
-  bool m_receive, m_send, m_completed, m_mpi_collective;
-  char* m_recv_buf;
-  Request m_recv_req, m_send_req;
-  MPI_Request m_mpi_req;
+  bool m_send_posted, m_completed, m_mpi_collective;
+  MPI_Request m_request;
 };
 }  // namespace _internal
 
@@ -154,74 +156,117 @@ int Igather(const void *sendbuf, int sendcount, MPI_Datatype sendtype,
 }  // namespace RBC
 
 RBC::_internal::IgatherReq::IgatherReq(const void *sendbuf, int sendcount,
-        MPI_Datatype sendtype, void *recvbuf, int recvcount,
-        MPI_Datatype recvtype, int root, int tag,
-        RBC::Comm const &comm)
-    : m_sendbuf(sendbuf)
-    , m_recvbuf(recvbuf)
-    , m_sendcount(sendcount)
-    , m_recvcount(recvcount)
-    , m_root(root)
-    , m_tag(tag)
-    , m_own_height(0)
-    , m_size(0)
-    , m_rank(0)
-    , m_height(1)
-    , m_received(0)
-    , m_count(0)
-    , m_sendtype(sendtype)
-    , m_recvtype(recvtype)
-    , m_comm(comm)
-    , m_receive(false)
-    , m_send(false)
-    , m_completed(false)
-    , m_mpi_collective(false)
-    , m_recv_buf(nullptr) {
-#ifndef HAS_NO_MPI_3_SUPPORT
+                                       MPI_Datatype sendtype, void *recvbuf, int recvcount,
+                                       MPI_Datatype recvtype, int root, int tag,
+                                       RBC::Comm const &comm) :
+  m_buffer(static_cast<char*>(recvbuf)),
+  m_recv_ptr(nullptr),
+  m_datatype(sendtype),
+  m_count(sendcount),
+  m_recved_count(0),
+  m_root(root),
+  m_tag(tag),
+  m_size(0),
+  m_rank(0),
+  m_zeroed_rank(0),
+  m_iteration(0),
+  m_iterations(0),
+  m_type_bytes(0),
+  m_comm(comm),
+  m_send_posted(false),
+  m_completed(false),
+  m_mpi_collective(false),
+  m_request(MPI_REQUEST_NULL) {
+#ifndef NO_NONBLOCKING_COLL_MPI_SUPPORT
     if (comm.useMPICollectives()) {
-        // todo 
         MPI_Igather(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype,
-                root, comm.get(), &m_mpi_req);
+                root, comm.get(), &m_request);
         m_mpi_collective = true;
         return;
     }
 #endif
 
-    RBC::Comm_rank(comm, &m_rank);
-    RBC::Comm_size(comm, &m_size);
+  m_rank = comm.getRank();
+  m_size = comm.getSize();
 
-    m_new_rank = (m_rank - root + m_size) % m_size;
-    int max_height = tlx::integer_log2_ceil(m_size);
-    if (std::pow(2, max_height) < m_size)
-        max_height++;
-    for (int i = 0; ((m_new_rank >> i) % 2 == 0) && (i < max_height); i++)
-        m_own_height++;
+  if (m_count == 0) {
 
-    MPI_Aint lb, recv_size, send_size;
-    MPI_Type_get_extent(recvtype, &lb, &recv_size);
-    MPI_Type_get_extent(sendtype, &lb, &send_size);
-    m_recvtype_size = static_cast<int> (recv_size);
-    m_sendtype_size = static_cast<int> (send_size);
+    m_completed = true;
+    return;
+    
+  }
 
-    int subtree_size = static_cast<int> (std::min(std::pow(2, m_own_height),
-            static_cast<double> (m_size)));
-    assert(sendcount == recvcount); // TODO: different send and recv types
-    assert(m_sendtype_size == m_recvtype_size);
-    m_total_recvcount = subtree_size * recvcount;
-    recv_size = m_total_recvcount * m_recvtype_size;
-    if (m_rank == root) {
-        m_recv_buf = static_cast<char*>(recvbuf);
-    } else {
-        m_recv_buf = new char[recv_size];
+  MPI_Aint lb, m_type_bytes_aint;
+  MPI_Type_get_extent(sendtype, &lb, &m_type_bytes_aint);
+  m_type_bytes = static_cast<int>(m_type_bytes_aint);
+
+  if (m_size == 1) {
+
+    memcpy(m_buffer, sendbuf, m_type_bytes * m_count);
+    m_completed = true;
+    return;
+  }
+
+  m_recv_ptr = static_cast<char*>(recvbuf);
+
+  if (m_rank != root || root != 0) {
+  
+    const auto total_recv_bytes = m_type_bytes * m_size * m_count;
+    m_recv_ptr = static_cast<char*>(malloc(total_recv_bytes));
+  }
+  
+  memcpy(m_recv_ptr, sendbuf, m_type_bytes * m_count);
+    
+  m_zeroed_rank = _internal::RemoveBinomTreeRoot(root, m_rank, m_size);
+
+  const int tailing_zeros = tlx::ffs(m_zeroed_rank) - 1;
+  m_iterations = m_zeroed_rank > 0 ?
+    tailing_zeros : tlx::integer_log2_ceil(m_size);
+
+  m_recved_count = sendcount;
+
+  // Start sending a message.
+  if (m_iteration != m_iterations) {
+
+    const int source = m_zeroed_rank + (1 << m_iteration);
+
+    if (source >= m_size) {
+      m_iteration = m_iterations;
+      return;
     }
-    //Copy send data into receive buffer
-    std::memcpy(m_recv_buf, sendbuf, sendcount * m_sendtype_size);
-    m_received = sendcount;
+    
+    const int rooted_source = _internal::AddBinomTreeRoot(m_root, source, m_size);
+    const int count = std::min(m_count << m_iteration, m_count * (m_size - source));
+
+    Irecv(m_recv_ptr + m_type_bytes * m_recved_count, count, m_datatype, rooted_source, m_tag,
+         m_comm, &m_request);
+
+    m_recved_count += count;
+    ++m_iteration;
+
+    return;
+  }
+
+  // Send a message.
+  if (m_zeroed_rank > 0) {
+
+    const int target = m_zeroed_rank - (1 << m_iterations);
+    const int rooted_target = _internal::AddBinomTreeRoot(m_root, target, m_size);
+
+    Isend(m_recv_ptr, m_recved_count, m_datatype, rooted_target, m_tag, m_comm, &m_request);
+    m_send_posted = true;
+    
+    return;
+  }
+
+  assert(m_size == 1);
+  assert(m_recv_ptr == nullptr);
+  m_completed = true;
+  
 };
 
 RBC::_internal::IgatherReq::~IgatherReq() {
-    if ((m_rank != m_root) && m_recv_buf != nullptr)
-        delete[] m_recv_buf;
+  assert(m_recv_ptr == nullptr);
 }
 
 int RBC::_internal::IgatherReq::test(int *flag, MPI_Status *status) {
@@ -230,71 +275,93 @@ int RBC::_internal::IgatherReq::test(int *flag, MPI_Status *status) {
         return 0;
     }
 
-    if (m_mpi_collective)
-        return MPI_Test(&m_mpi_req, flag, status);
+    *flag = 0;
 
-    //If messages have to be received
-    if (m_height <= m_own_height) {
-        if (!m_receive) {
-            int tmp_src = m_new_rank + std::pow(2, m_height - 1);
-            if (tmp_src < m_size) {
-                int src = (tmp_src + m_root) % m_size;
-                //Range::Test if message can be received
-                MPI_Status probe_status;
-                int ready;
-                RBC::Iprobe(src, m_tag, m_comm, &ready, &probe_status);
-                if (ready) {
-                    //Receive message with non-blocking receive
-                    MPI_Get_count(&probe_status, m_sendtype, &m_count);
-                    RBC::Irecv(m_recv_buf + m_received * m_sendtype_size, m_count,
-                            m_sendtype, src, m_tag, m_comm, &m_recv_req);
-                    m_receive = true;
-                }
-            } else {
-                //Source rank larger than comm size
-                m_height++;
-            }
-        }
-        if (m_receive) {
-            //Range::Test if receive finished
-            int finished;
-            RBC::Test(&m_recv_req, &finished, MPI_STATUS_IGNORE);
-            if (finished) {
-                //Merge the received data
-                m_received += m_count;
-                m_height++;
-                m_receive = false;
-            }
-        }
+    if (m_mpi_collective) {
+      const auto err = MPI_Test(&m_request, flag, status);
+      m_completed = *flag;
+      return err;
     }
 
-    //If all messages have been received
-    if (m_height > m_own_height) {
-        if (m_rank == m_root) {
-            //root doesn't send to anyone
-            m_completed = true;
-            //            if (total_recvcount != received)
-            //            std::cout << W(rank) << W(size) << W(total_recvcount) << W(received) << std::endl;
-            assert(m_total_recvcount == m_received);
-        } else {
-            if (!m_send) {
-                //Start non-blocking send to parent node
-                int tmp_dest = m_new_rank - std::pow(2, m_height - 1);
-                int dest = (tmp_dest + m_root) % m_size;
-                RBC::Isend(m_recv_buf, m_received, m_sendtype, dest, m_tag, m_comm, &m_send_req);
-                //                std::cout << W(rank) << W(dest) << W(received) << W(total_recvcount) << std::endl;
-                m_send = true;
-            }
-            //Gather is completed when the send is finished
-            int finished;
-            RBC::Test(&m_send_req, &finished, MPI_STATUS_IGNORE);
-            if (finished)
-                m_completed = true;
-        }
+  // Complete pending request.
+  if (m_request != MPI_REQUEST_NULL) {
+
+    int completed = 0;
+    MPI_Test(&m_request, &completed, MPI_STATUS_IGNORE);
+    if (completed) {
+      m_request = MPI_REQUEST_NULL;
     }
 
-    if (m_completed)
-        *flag = 1;
-    return 0;
+  }
+
+  // No pending request, receive data.
+  if (m_request == MPI_REQUEST_NULL && m_iteration != m_iterations) {
+
+    const int source = m_zeroed_rank + (1 << m_iteration);
+
+    if (source < m_size) {
+
+      const int rooted_source = _internal::AddBinomTreeRoot(m_root, source, m_size);
+      const int count = std::min(m_count << m_iteration, m_count * (m_size - source));
+
+      Irecv(m_recv_ptr + m_type_bytes * m_recved_count, count, m_datatype, rooted_source, m_tag,
+            m_comm, &m_request);
+
+      m_recved_count += count;
+      ++m_iteration;
+
+    } else {
+
+      m_iteration = m_iterations;
+
+    }
+  }
+
+  if (m_request == MPI_REQUEST_NULL && m_iteration == m_iterations) {
+  
+    if (m_zeroed_rank > 0 && !m_send_posted) {
+
+      const int target = m_zeroed_rank - (1 << m_iterations);
+      const int rooted_target = _internal::AddBinomTreeRoot(m_root, target, m_size);
+
+      Isend(m_recv_ptr, m_recved_count, m_datatype, rooted_target, m_tag, m_comm, &m_request);
+      m_send_posted = true;
+        
+    } else if (m_zeroed_rank > 0 && m_send_posted) {
+
+      assert(m_recv_ptr != nullptr);
+      free(m_recv_ptr);
+      m_recv_ptr = nullptr;
+
+      m_completed = true;
+      *flag = 1;
+
+    } else if (m_zeroed_rank == 0 && m_rank != 0) {
+
+      const size_t right_bytes = m_type_bytes * m_root * m_count;
+      const size_t left_bytes  = m_type_bytes * m_size * m_count - right_bytes;
+    
+      memcpy(m_buffer, m_recv_ptr + left_bytes, right_bytes);
+      memcpy(static_cast<char*>(m_buffer) + right_bytes, m_recv_ptr, left_bytes);
+        
+      assert(m_recv_ptr != nullptr);
+      free(m_recv_ptr);
+      m_recv_ptr = nullptr;
+
+      m_completed = true;
+      *flag = 1;
+    
+    } else {
+      assert(m_iteration == m_iterations && m_zeroed_rank == 0 && m_rank == 0);
+        
+      m_completed = true;
+      *flag = 1;
+
+    }
+
+  }
+
+
+  return 0;
 
 }
