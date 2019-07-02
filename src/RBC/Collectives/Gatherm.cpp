@@ -238,7 +238,7 @@ int RBC::_internal::IgathermReq::test(int* flag, MPI_Status* status) {
       int tmp_src = m_new_rank + std::pow(2, m_height - 1);
       if (tmp_src < m_size) {
         int src = (tmp_src + m_root) % m_size;
-        // Range::Test if message can be received
+        // Test if message can be received
         MPI_Status probe_status;
         int ready;
         RBC::Iprobe(src, m_tag, m_comm, &ready, &probe_status);
@@ -255,7 +255,7 @@ int RBC::_internal::IgathermReq::test(int* flag, MPI_Status* status) {
       }
     }
     if (m_receive) {
-      // Range::Test if receive finished
+      // Test if receive finished
       int finished;
       RBC::Test(&m_recv_req, &finished, MPI_STATUS_IGNORE);
       if (finished) {
@@ -278,8 +278,6 @@ int RBC::_internal::IgathermReq::test(int* flag, MPI_Status* status) {
     if (m_rank == m_root) {
       // root doesn't send to anyone
       m_completed = true;
-      //            if (total_recvcount != received)
-      //            std::cout << W(rank) << W(size) << W(total_recvcount) << W(received) << std::endl;
       assert(m_total_recvcount == m_received);
     } else {
       if (!m_send) {
@@ -287,7 +285,6 @@ int RBC::_internal::IgathermReq::test(int* flag, MPI_Status* status) {
         int tmp_dest = m_new_rank - std::pow(2, m_height - 1);
         int dest = (tmp_dest + m_root) % m_size;
         RBC::Isend(m_recv_buf, m_received, m_sendtype, dest, m_tag, m_comm, &m_send_req);
-        //                std::cout << W(rank) << W(dest) << W(received) << W(total_recvcount) << std::endl;
         m_send = true;
       }
       // Gatherm is completed when the send is finished
