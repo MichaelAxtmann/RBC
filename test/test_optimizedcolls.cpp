@@ -1,7 +1,7 @@
 /*****************************************************************************
  * This file is part of the Project JanusSortRBC
  *
- * Copyright (c) 2018, Michael Axtmann <michael.axtmann@kit.edu>
+ * Copyright (c) 2018-2019, Michael Axtmann <michael.axtmann@kit.edu>
  *
  * All rights reserved. Published under the BSD-2 license in the LICENSE file.
 ******************************************************************************/
@@ -489,9 +489,6 @@ int main(int argc, char** argv) {
     PrintDistributed("ExscanOptimized: " << std::endl << send << std::endl << recv);
   }
 
-  PRINT_ROOT("twotree");
-  GenerateData(send, recv);
-  RBC::_internal::optimized::ReduceTwotree(send.data(), recv.data(), el_cnt, type, MPI_SUM, 2, rcomm);
   PRINT_ROOT("Bcast");
   for (int root = 0; root != size; ++root) {
     if (mpi) {
@@ -519,6 +516,208 @@ int main(int argc, char** argv) {
       GenerateDataOnRoot(send, rank, root);
       RBC::_internal::optimized::BcastTwotree(send.data(), el_cnt, type, root, rcomm);
       PrintDistributed("BcastTwotree: " << std::endl << send << std::endl << recv);
+    }
+  }
+
+  PRINT_ROOT("Gatherv");
+  for (int root = 0; root != size; ++root) {
+    PRINT_ROOT("Root=" << root);
+    if (mpi) {
+      std::vector<long> send(el_cnt + rank);
+      std::vector<long> recv;
+
+      if (rank == root) {
+        recv.resize(el_cnt * size + (size - 1) * size / 2);
+      }
+
+      std::vector<int> recvcnts;
+      std::vector<int> displs;
+      
+      if (rank == root) {
+
+        recvcnts.resize(size);
+        for (size_t i = 0; i != size; ++i) {
+          recvcnts[i] = el_cnt + i;        
+        }
+
+        displs.resize(size + 1);
+        tlx::exclusive_scan(recvcnts.begin(), recvcnts.end(), displs.begin(), 0, std::plus<>{ });
+      
+      }
+
+      GenerateData(send, recv);
+
+      RBC::Comm mpi_comm;
+      RBC::Create_Comm_from_MPI(MPI_COMM_WORLD, &mpi_comm, true, true, true);
+      RBC::Gatherv(send.data(), send.size(), type, recv.data(), recvcnts.data(), displs.data(),
+                   type, root, mpi_comm);
+      PrintDistributed("Gatherv: " << std::endl << send << std::endl << recv);
+    } else {
+      std::vector<long> send(el_cnt + rank);
+      std::vector<long> recv;
+
+      if (rank == root) {
+        recv.resize(el_cnt * size + (size - 1) * size / 2);
+      }
+
+      std::vector<int> recvcnts;
+      std::vector<int> displs;
+      
+      if (rank == root) {
+
+        recvcnts.resize(size);
+        for (size_t i = 0; i != size; ++i) {
+          recvcnts[i] = el_cnt + i;        
+        }
+
+        displs.resize(size + 1);
+        tlx::exclusive_scan(recvcnts.begin(), recvcnts.end(), displs.begin(), 0, std::plus<>{ });
+      
+      }
+
+      GenerateData(send, recv);
+
+      RBC::Gatherv(send.data(), send.size(), type, recv.data(), recvcnts.data(), displs.data(),
+                   type, root, rcomm);
+      PrintDistributed("Gatherv: " << std::endl << send << std::endl << recv);
+    }
+  }
+
+  PRINT_ROOT("Igatherv");
+  for (int root = 0; root != size; ++root) {
+    // for (int root = size - 1; root >= 0; --root) {
+    PRINT_ROOT("Root=" << root);
+    if (mpi) {
+      std::vector<long> send(el_cnt + rank);
+      std::vector<long> recv;
+
+      if (rank == root) {
+        recv.resize(el_cnt * size + (size - 1) * size / 2);
+      }
+
+      std::vector<int> recvcnts;
+      std::vector<int> displs;
+      
+      if (rank == root) {
+
+        recvcnts.resize(size);
+        for (size_t i = 0; i != size; ++i) {
+          recvcnts[i] = el_cnt + i;        
+        }
+
+        displs.resize(size + 1);
+        tlx::exclusive_scan(recvcnts.begin(), recvcnts.end(), displs.begin(), 0, std::plus<>{ });
+      
+      }
+
+      GenerateData(send, recv);
+
+      RBC::Comm mpi_comm;
+      RBC::Request request;
+      RBC::Create_Comm_from_MPI(MPI_COMM_WORLD, &mpi_comm, true, true, true);
+      RBC::Igatherv(send.data(), send.size(), type, recv.data(), recvcnts.data(), displs.data(),
+                   type, root, mpi_comm, &request);
+      RBC::Wait(&request, MPI_STATUS_IGNORE);
+      PrintDistributed("Igatherv: " << std::endl << send << std::endl << recv);
+    } else {
+      std::vector<long> send(el_cnt + rank);
+      std::vector<long> recv;
+
+      if (rank == root) {
+        recv.resize(el_cnt * size + (size - 1) * size / 2);
+      }
+
+      std::vector<int> recvcnts;
+      std::vector<int> displs;
+      
+      if (rank == root) {
+
+        recvcnts.resize(size);
+        for (size_t i = 0; i != size; ++i) {
+          recvcnts[i] = el_cnt + i;        
+        }
+
+        displs.resize(size + 1);
+        tlx::exclusive_scan(recvcnts.begin(), recvcnts.end(), displs.begin(), 0, std::plus<>{ });
+      
+      }
+
+      GenerateData(send, recv);
+
+      RBC::Request request;
+      RBC::Igatherv(send.data(), send.size(), type, recv.data(), recvcnts.data(), displs.data(),
+                   type, root, rcomm, &request);
+      RBC::Wait(&request, MPI_STATUS_IGNORE);
+      PrintDistributed("Igatherv: " << std::endl << send << std::endl << recv);
+    }
+  }
+
+  for (int root = 0; root != size; ++root) {
+    if (mpi) {
+      PRINT_ROOT("Gather mpi");
+      std::vector<long> send(el_cnt);
+      std::vector<long> recv;
+
+      if (rank == root) {
+        recv.resize(el_cnt * size);
+      }
+
+      GenerateData(send, recv);
+
+      RBC::Comm mpi_comm;
+      RBC::Create_Comm_from_MPI(MPI_COMM_WORLD, &mpi_comm, true, true, true);
+      RBC::Gather(send.data(), send.size(), type, recv.data(), send.size(), type, root, mpi_comm);
+      PrintDistributed("Gather: " << std::endl << send << std::endl << recv);
+    } else {
+      PRINT_ROOT("Gather rbc");
+      std::vector<long> send(el_cnt);
+      std::vector<long> recv;
+
+      if (rank == root) {
+        recv.resize(el_cnt * size);
+      }
+
+      GenerateData(send, recv);
+
+      RBC::Gather(send.data(), send.size(), type, recv.data(), send.size(), type, root, rcomm);
+      PrintDistributed("Gather: " << std::endl << send << std::endl << recv);
+    }
+  }
+
+  PRINT_ROOT("Igather");
+  for (int root = 0; root != size; ++root) {
+    if (mpi) {
+      std::vector<long> send(el_cnt);
+      std::vector<long> recv;
+
+      if (rank == root) {
+        recv.resize(el_cnt * size);
+      }
+
+      GenerateData(send, recv);
+
+      RBC::Comm mpi_comm;
+      RBC::Request request;
+      RBC::Create_Comm_from_MPI(MPI_COMM_WORLD, &mpi_comm, true, true, true);
+      RBC::Igather(send.data(), send.size(), type, recv.data(), send.size(), type, root, mpi_comm,
+        &request);
+      RBC::Wait(&request, MPI_STATUS_IGNORE);
+      PrintDistributed("Gather: " << std::endl << send << std::endl << recv);
+    } else {
+      std::vector<long> send(el_cnt);
+      std::vector<long> recv;
+
+      if (rank == root) {
+        recv.resize(el_cnt * size);
+      }
+
+      GenerateData(send, recv);
+
+      RBC::Request request;
+      RBC::Igather(send.data(), send.size(), type, recv.data(), send.size(), type, root, rcomm,
+        &request);
+      RBC::Wait(&request, MPI_STATUS_IGNORE);
+      PrintDistributed("Gather: " << std::endl << send << std::endl << recv);
     }
   }
 
