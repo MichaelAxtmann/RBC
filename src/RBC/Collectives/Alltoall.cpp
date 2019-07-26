@@ -91,15 +91,23 @@ int Alltoallv(void* sendbuf,
 
   int target = rank > 0 ? size - rank : 0;
 
-  std::vector<MPI_Request> requests(2 * size);
+  std::vector<MPI_Request> requests;
+  requests.reserve(2 * size);
 
   for (int i = 0; i != size; ++i) {
-    RBC::Irecv(static_cast<char*>(recvbuf) + recv_datatype_size * rdispls[target],
-               recvcounts[target], recvtype, target,
-               Tag_Const::ALLTOALL, comm, requests.data() + 2 * i);
-    RBC::Isend(static_cast<char*>(sendbuf) + send_datatype_size * sdispls[target],
-               sendcounts[target], sendtype, target,
-               Tag_Const::ALLTOALL, comm, requests.data() + 2 * i + 1);
+    if (recvcounts[target] > 0) {
+      requests.emplace_back();
+      RBC::Irecv(static_cast<char*>(recvbuf) + recv_datatype_size * rdispls[target],
+                 recvcounts[target], recvtype, target,
+                 Tag_Const::ALLTOALL, comm, &requests.back());
+    }
+
+    if (sendcounts[target] > 0) {
+      requests.emplace_back();
+      RBC::Isend(static_cast<char*>(sendbuf) + send_datatype_size * sdispls[target],
+                 sendcounts[target], sendtype, target,
+                 Tag_Const::ALLTOALL, comm, &requests.back());
+    }
 
     ++target;
     if (target == size) {
@@ -107,7 +115,7 @@ int Alltoallv(void* sendbuf,
     }
   }
 
-  MPI_Waitall(2 * size, requests.data(), MPI_STATUSES_IGNORE);
+  MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
 
   return 0;
 }
