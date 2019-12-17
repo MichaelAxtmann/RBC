@@ -395,7 +395,7 @@ int RBC::Comm::Split_Comm(Comm const& comm, int left_start, int left_end, int ri
 int RBC::Comm_free(Comm& comm) {
   std::ignore = comm;
   // We don't need to free communicators, as we use shared pointers
-  // with costumized deleters.
+  // with customized deleters.
   return 0;
 }
 

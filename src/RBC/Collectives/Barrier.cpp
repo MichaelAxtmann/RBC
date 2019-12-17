@@ -23,7 +23,7 @@
 
 namespace RBC {
 int Barrier(Comm const& comm) {
-  if (comm.useMPICollectives()) {
+  if (comm.useMPICollectives() || comm.splitMPIComm()) {
     return MPI_Barrier(comm.get());
   }
   int a = 0, b = 0;
