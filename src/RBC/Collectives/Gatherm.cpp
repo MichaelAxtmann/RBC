@@ -66,7 +66,9 @@ int Gatherm(const void* sendbuf, int sendcount,
   std::unique_ptr<char[]> merge_buf(new char[recv_size]);
 
   // Copy send data into receive buffer
-  std::memcpy(recv_buf, sendbuf, sendcount * sendtype_size);
+  if (sendcount > 0) {
+    std::memcpy(recv_buf, sendbuf, sendcount * sendtype_size);
+  }
   int received = sendcount;
   int height = 1;
 
