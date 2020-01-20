@@ -36,6 +36,12 @@ class RangeGroup {
 
   int getRank() const;
 
+  int getMpiFirst() const;
+
+  int getMpiLast() const;
+
+  int getStride() const;
+
 /**
  * Transforms a range rank to a mpi rank.
  */

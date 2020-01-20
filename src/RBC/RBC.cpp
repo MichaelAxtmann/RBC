@@ -90,6 +90,18 @@ int RBC::Comm::getRank() const {
   return m_group.getRank();
 }
 
+int RBC::Comm::getMpiFirst() const {
+  return m_group.getMpiFirst();
+}
+
+int RBC::Comm::getMpiLast() const {
+  return m_group.getMpiLast();
+}
+
+int RBC::Comm::getStride() const {
+  return m_group.getStride();
+}
+
 
 RBC::Comm RBC::Create_Comm_from_MPI(MPI_Comm mpi_comm,
                                     bool use_mpi_collectives, bool split_mpi_comm, bool use_comm_create) {

@@ -185,11 +185,21 @@ class Comm {
  */
   bool isEmpty() const;
 
+  /**  Use this function only if you know what happens with the
+   *  MPI_Comm. The MPI_Comm may become invalid as soon as all objects
+   *  which share the MPI communicator are destroyed.
+   */
   MPI_Comm get() const;
 
   int getSize() const;
 
   int getRank() const;
+
+  int getMpiFirst() const;
+
+  int getMpiLast() const;
+
+  int getStride() const;
 
   friend std ::ostream& operator<< (std::ostream& os, const Comm& comm);
 

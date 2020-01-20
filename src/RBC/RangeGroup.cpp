@@ -66,6 +66,18 @@ int RangeGroup::getRank() const {
   return rank_;
 }
 
+int RangeGroup::getMpiFirst() const {
+  return f_;
+}
+
+int RangeGroup::getMpiLast() const {
+  return l_;
+}
+
+int RangeGroup::getStride() const {
+  return s_;
+}
+
 int RangeGroup::RangeRankToMpiRank(int range_rank) const {
   if (range_rank == MPI_ANY_SOURCE) {
     return range_rank;
