@@ -24,11 +24,12 @@
 namespace RBC {
 int Barrier(Comm const& comm) {
   if (comm.useMPICollectives() || comm.splitMPIComm()) {
-    return MPI_Barrier(comm.get());
+    MPI_Barrier(comm.get());
+  } else {
+    int a = 0, b = 0;
+    RBC::Reduce(&a, &b, 1, MPI_INT, MPI_SUM, 0, comm);
+    RBC::Bcast( &a, 1, MPI_INT, 0, comm );
   }
-  int a = 0, b = 0;
-  RBC::Reduce(&a, &b, 1, MPI_INT, MPI_SUM, 0, comm);
-  RBC::Bcast( &a, 1, MPI_INT, 0, comm );
   return 0;
 }
 
