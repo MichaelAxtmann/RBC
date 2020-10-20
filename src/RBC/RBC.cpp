@@ -201,7 +201,7 @@ int RBC::Comm::Comm_create_group(RBC::Comm const& comm, RBC::Comm* new_comm,
     MPI_Group_range_incl(group, 1, &ranges, &new_group);
     MPI_Comm new_mpi_comm{ MPI_COMM_NULL };
 #ifdef NO_NONBLOCKING_COLL_MPI_SUPPORT
-    MPI_Comm_create(comm.m_mpi_comm, new_group, &new_mpi_comm);
+    MPI_Comm_create(comm.get(), new_group, &new_mpi_comm);
 #else
     MPI_Comm_create_group(comm.get(), new_group, 0, &new_mpi_comm);
 #endif
@@ -271,7 +271,7 @@ int RBC::Comm::Split_Comm(Comm const& comm, int left_start, int left_end, int ri
 
         MPI_Comm new_mpi_comm = MPI_COMM_NULL;
 #ifdef NO_NONBLOCKING_COLL_MPI_SUPPORT
-        MPI_Comm_create(comm.get(), new_group, new_mpi_comm);
+        MPI_Comm_create(comm.get(), new_group, &new_mpi_comm);
 #else
         MPI_Comm_create_group(comm.get(), new_group, 0, &new_mpi_comm);
 #endif
@@ -317,8 +317,8 @@ int RBC::Comm::Split_Comm(Comm const& comm, int left_start, int left_end, int ri
 
 #ifdef NO_NONBLOCKING_COLL_MPI_SUPPORT
 
-        MPI_Comm_create(comm.mpi_comm, new_group_left, &mpi_left);
-        MPI_Comm_create(comm.mpi_comm, new_group_right, &mpi_right);
+        MPI_Comm_create(comm.get(), new_group_left, &mpi_left);
+        MPI_Comm_create(comm.get(), new_group_right, &mpi_right);
 
         if (!(rank >= left_start && rank <= left_end)) {
           assert(mpi_left == MPI_COMM_NULL);
