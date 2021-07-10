@@ -534,28 +534,6 @@ class ScanAndBcastExecuter {
 
   std::unique_ptr<char[]> m_tmpbuf;
 
-  // std::string GetArray(std::string name, const int* arr) {
-  //     name += "\t";
-  //     for (auto it = arr; it != arr + m_local_el_cnt; ++it) {
-  //         name += std::to_string(*it) + " ";
-  //     }
-  //     return name;
-  // }
-
-  // void PrintArrays() {
-  //     std::string str("PE: ");
-  //     str += std::to_string(m_rank) + "\t";
-  //     str += GetArray("sendbuf", (const int*)m_sendbuf.get());
-  //     str += "\t";
-  //     str += GetArray("recvbuf_scan", (const int*)m_recvbuf_scan);
-  //     str +=  "\t";
-  //     str += GetArray("recvbuf_bcast", (const int*)m_recvbuf_bcast);
-  //     str += "\t";
-  //     str += GetArray("tmpbuf", (const int*)m_tmpbuf.get());
-  //     str += "\n";
-  //     std::cout << str;
-  // }
-
   const RBC::_internal::Twotree::Twotree m_tree;
 };
 

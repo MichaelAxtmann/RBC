@@ -461,19 +461,6 @@ class ScanExecuter {
 
   std::unique_ptr<char[]> m_tmpbuf;
 
-  // void PrintArray(std::string name, const int* arr) {
-  //     std::cout << "PE: " << m_rank << " " << name << " ";
-  //     for (auto it = arr; it != arr + m_local_el_cnt; ++it) {
-  //         std::cout << *it << " ";
-  //     }
-  // }
-
-  // void PrintArrays() {
-  //     PrintArray("sendbuf", (const int*)m_sendbuf.get());
-  //     PrintArray("recvbuf", (const int*)m_recvbuf);
-  //     PrintArray("tmpbuf", (const int*)m_tmpbuf.get());
-  // }
-
   const RBC::_internal::Twotree::Twotree m_tree;
 };
 

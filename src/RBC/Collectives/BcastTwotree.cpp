@@ -452,17 +452,6 @@ class BcastExecuter {
   const int m_top_package_cnt;
   const int m_bottom_package_cnt;
 
-  // void PrintArray(std::string name, const int* arr) {
-  //     std::cout << "PE: " << m_rank << " " << name << " ";
-  //     for (auto it = arr; it != arr + m_local_el_cnt; ++it) {
-  //         std::cout << *it << " ";
-  //     }
-  // }
-
-  // void PrintArrays() {
-  //     PrintArray("sendbuf", static_cast<const int*>(m_sendbuf));
-  // }
-
   const RBC::_internal::Twotree::Twotree m_tree;
 };
 

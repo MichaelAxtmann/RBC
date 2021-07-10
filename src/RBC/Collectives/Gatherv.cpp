@@ -21,7 +21,6 @@
 #include <cassert>
 #include <cmath>
 #include <cstring>
-#include <iostream>
 
 #include <RBC.hpp>
 #include <tlx/algorithm.hpp>
@@ -178,7 +177,7 @@ int Igatherv(const void* sendbuf, int sendcount, MPI_Datatype sendtype,
 RBC::_internal::IgathervReq::IgathervReq(const void* sendbuf, int sendcount,
                                          MPI_Datatype sendtype, void* recvbuf, 
                                          const int* recvcounts, const int* displs,
-                                         MPI_Datatype recvtype,
+                                         MPI_Datatype /*recvtype*/,
                                          int root, int tag, RBC::Comm const& comm) :
   m_sendbuf(sendbuf),
   m_buffer(recvbuf),

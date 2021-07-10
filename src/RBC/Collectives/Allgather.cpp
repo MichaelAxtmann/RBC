@@ -732,7 +732,6 @@ int RBC::_internal::IallgathervReq::test(int* flag, MPI_Status* status) {
   if (!m_gather_completed) {
     RBC::Test(&m_req_gather, &m_gather_completed, MPI_STATUS_IGNORE);
     if (m_gather_completed) {
-      std::cout << "send " << m_total_recvcount << std::endl;
       RBC::Ibcast(m_recvbuf, m_total_recvcount, m_recvtype, 0, m_comm,
                   &m_req_bcast, m_tag);
     }

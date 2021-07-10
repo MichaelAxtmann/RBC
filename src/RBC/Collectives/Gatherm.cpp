@@ -21,7 +21,6 @@
 #include <cassert>
 #include <cmath>
 #include <cstring>
-#include <iostream>
 
 #include "RBC.hpp"
 #include "tlx/math.hpp"

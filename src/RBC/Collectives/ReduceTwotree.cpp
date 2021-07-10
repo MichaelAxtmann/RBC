@@ -514,19 +514,6 @@ class ReduceExecuter {
 
   std::unique_ptr<char[]> m_tmpbuf;
 
-  // void PrintArray(std::string name, const int* arr) {
-  //     std::cout << "PE: " << m_rank << " " << name << " ";
-  //     for (auto it = arr; it != arr + m_local_el_cnt; ++it) {
-  //         std::cout << *it << " ";
-  //     }
-  // }
-
-  // void PrintArrays() {
-  //     PrintArray("sendbuf", static_cast<const int*>(m_sendbuf));
-  //     PrintArray("recvbuf", static_cast<const int*>(m_recvbuf.get()));
-  //     PrintArray("tmpbuf",  static_cast<const int*>(m_tmpbuf.get()));
-  // }
-
   const RBC::_internal::Twotree::Twotree m_tree;
 };
 

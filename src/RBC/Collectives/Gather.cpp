@@ -22,7 +22,6 @@
 #include <cassert>
 #include <cmath>
 #include <cstring>
-#include <iostream>
 
 #include <RBC.hpp>
 #include <tlx/algorithm.hpp>
@@ -156,8 +155,8 @@ int Igather(const void *sendbuf, int sendcount, MPI_Datatype sendtype,
 }  // namespace RBC
 
 RBC::_internal::IgatherReq::IgatherReq(const void *sendbuf, int sendcount,
-                                       MPI_Datatype sendtype, void *recvbuf, int recvcount,
-                                       MPI_Datatype recvtype, int root, int tag,
+                                       MPI_Datatype sendtype, void *recvbuf, int /*recvcount*/,
+                                       MPI_Datatype /*recvtype*/, int root, int tag,
                                        RBC::Comm const &comm) :
   m_buffer(static_cast<char*>(recvbuf)),
   m_recv_ptr(nullptr),

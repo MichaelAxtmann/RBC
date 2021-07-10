@@ -14,6 +14,7 @@
 #include <random>
 #include <stdlib.h>
 #include <vector>
+#include <iostream>
 
 #include "RBC.hpp"
 
