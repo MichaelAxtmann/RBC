@@ -35,6 +35,9 @@ endif()
 add_subdirectory(external/tlx)
 set(TLX_LIBRARIES tlx)
 
+#### MPI
+find_package(MPI REQUIRED)
+
 ########################################################
 ## Flags
 ########################################################
@@ -102,7 +105,7 @@ file(GLOB RBC_SRCS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
 
 # Build shared library to inherit mpi wrapper from parent targets
 add_library(rbc STATIC ${RBC_SRCS})
-target_link_libraries(rbc tlx)
+target_link_libraries(rbc tlx MPI::MPI_CXX)
 
 file(GLOB RBC_INCLUDES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
   include/RBC
