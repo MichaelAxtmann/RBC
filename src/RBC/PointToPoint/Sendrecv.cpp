@@ -39,7 +39,6 @@ int Sendrecv(void* sendbuf,
              void* recvbuf, int recvcount, MPI_Datatype recvtype,
              int source, int recvtag,
              Comm const& comm, MPI_Status* status) {
-  std::cout << "Rank=" << comm.getRank() << " sends to " << comm.RangeRankToMpiRank(dest) << " and receives from " << comm.RangeRankToMpiRank(source) << std::endl;
   return MPI_Sendrecv(sendbuf,
                       sendcount, sendtype,
                       comm.RangeRankToMpiRank(dest), sendtag,
